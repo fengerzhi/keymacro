@@ -2,12 +2,16 @@ name: 构建 macOS 安装包
 
 # 用法：
 #   1) 仓库页面 → Actions → 左侧「构建 macOS 安装包」→ Run workflow
-#   2) 或者打一个 tag（git tag v1.7.0 && git push --tags），构建完会自动发布 Release
+#   2) 打 tag（git tag v1.7.1 && git push origin v1.7.1），构建完自动发布 Release
+#   3) 推 build-mac 分支：只构建并把 dmg 回传到 release-assets 分支，
+#      用于网页打不开时仍能用 git 拿到安装包
 on:
   workflow_dispatch:
   push:
     tags:
       - "v*"
+    branches:
+      - "build-mac"
 
 permissions:
   contents: write
@@ -79,6 +83,28 @@ jobs:
           path: dist/*.dmg
           if-no-files-found: error
           retention-days: 30
+
+      - name: 把 dmg 回传到 release-assets 分支
+        # 网页打不开时的下载通道：用 git 客户端就能取到安装包，
+        # 不依赖 GitHub 网页和 Release 页面。
+        # 用一个全新仓库推送，避免浅克隆（fetch-depth:1）无法 push 的问题；
+        # 每次强制覆盖该分支，分支里永远只有最新一个 dmg。
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          VER="${{ steps.ver.outputs.VERSION }}"
+          work="$(mktemp -d)"
+          cd "$work"
+          git init -q
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          mkdir -p dist-mac
+          cp "$GITHUB_WORKSPACE"/dist/*.dmg "dist-mac/按键精灵-${VER}-macOS.dmg"
+          git add -f "dist-mac/按键精灵-${VER}-macOS.dmg"
+          git commit -q -m "macOS 安装包 v${VER}（arm64）"
+          git push -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:release-assets
+          ls -lh dist-mac
 
       - name: 打 tag 时发布 Release
         if: startsWith(github.ref, 'refs/tags/')
