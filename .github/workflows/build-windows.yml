@@ -18,6 +18,12 @@ on:
 permissions:
   contents: write
 
+# 同一个 tag 下 macOS / Windows 两个流程会同时往同一个 Release 传附件，
+# 用同一个 concurrency 组让它们排队，避免「Release 还不存在」导致上传失败。
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   build-windows:
     name: Windows 打包（x64）
@@ -72,17 +78,12 @@ jobs:
 
       - name: 发布到 Release
         if: startsWith(github.ref, 'refs/tags/') || inputs.tag != ''
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          $tag = "${{ inputs.tag }}"
-          if (-not $tag) { $tag = "${{ github.ref_name }}" }
-          Write-Host "发布到 Release：$tag"
-          gh release view $tag
-          gh release upload $tag `
-            "dist/按键精灵-${{ steps.ver.outputs.VERSION }}-安装程序.exe" `
-            "dist/按键精灵-${{ steps.ver.outputs.VERSION }}-Windows免安装版.zip" `
-            --clobber
-          Write-Host "上传完成："
-          gh release view $tag --json assets --jq '.assets[].name'
+        uses: softprops/action-gh-release@v2
+        with:
+          # 用 action 而不是 gh 命令：Release 不存在时会自动创建，
+          # 且 macOS 流程先跑完时也能把附件追加进同一个 Release。
+          tag_name: ${{ inputs.tag || github.ref_name }}
+          files: |
+            dist/按键精灵-${{ steps.ver.outputs.VERSION }}-安装程序.exe
+            dist/按键精灵-${{ steps.ver.outputs.VERSION }}-Windows免安装版.zip
+          fail_on_unmatched_files: true

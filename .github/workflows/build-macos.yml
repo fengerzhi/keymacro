@@ -12,6 +12,12 @@ on:
 permissions:
   contents: write
 
+# 与 Windows 流程共用同一个 concurrency 组：同一 tag 下两个平台串行发布，
+# 避免同时写同一个 Release 时互相覆盖。
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   build-macos:
     name: macOS 打包（arm64）
