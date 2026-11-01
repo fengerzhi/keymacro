@@ -170,7 +170,9 @@ def pick_python() -> str:
     if platform.system() == "Windows":
         candidates = [sys.executable]
     else:
-        candidates = ["/usr/bin/python3", "/usr/local/bin/python3", sys.executable]
+        # 当前解释器优先（venv / CI 里依赖就装在它身上），
+        # 它跑不动 PyInstaller 时再退回系统 Python。
+        candidates = [sys.executable, "/usr/bin/python3", "/usr/local/bin/python3"]
 
     seen = set()
     for cand in candidates:

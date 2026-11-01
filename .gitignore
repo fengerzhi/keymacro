@@ -1,0 +1,23 @@
+# ---------- 构建产物 ----------
+dist/
+.pyinstaller/
+*.spec
+打包日志.txt
+
+# ---------- Python ----------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# ---------- 运行时/临时文件 ----------
+*.log
+*.zip
+~$*
+临时*/
+
+# ---------- 系统 ----------
+.DS_Store
+Thumbs.db
+desktop.ini

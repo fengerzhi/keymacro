@@ -1,0 +1,87 @@
+name: 构建 macOS 安装包
+
+# 用法：
+#   1) 仓库页面 → Actions → 左侧「构建 macOS 安装包」→ Run workflow
+#   2) 或者打一个 tag（git tag v1.7.0 && git push --tags），构建完会自动发布 Release
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-macos:
+    name: macOS 打包（arm64）
+    runs-on: macos-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 准备带 tkinter 的 Python
+        id: py
+        run: |
+          set -euo pipefail
+          PY="$(command -v python3)"
+          if "$PY" -c "import tkinter" 2>/dev/null; then
+            echo "自带 tkinter，直接使用：$PY"
+          else
+            echo "当前 Python 缺少 tkinter，改用 Homebrew 版本"
+            brew install python@3.12 python-tk@3.12
+            PY="$(brew --prefix)/opt/python@3.12/bin/python3.12"
+            "$PY" -c "import tkinter"
+          fi
+          "$PY" -c "import sys, tkinter; print(sys.version.split()[0], 'Tk', tkinter.TkVersion)"
+          echo "PY=$PY" >> "$GITHUB_OUTPUT"
+
+      - name: 安装打包依赖
+        run: |
+          set -euo pipefail
+          "${{ steps.py.outputs.PY }}" -m venv .venv
+          source .venv/bin/activate
+          python -m pip install --upgrade pip
+          python -m pip install "pyinstaller>=6.0" "pynput>=1.7.6" "pillow>=10"
+          python -c "import PyInstaller, pynput, PIL; print('依赖就绪')"
+
+      - name: 打包 .app 与 dmg
+        run: |
+          set -euo pipefail
+          source .venv/bin/activate
+          python build/build.py
+          python build/make_macos.py
+          ls -lh dist
+
+      - name: 读取版本号
+        id: ver
+        run: |
+          set -euo pipefail
+          echo "VERSION=$(tr -d '[:space:]' < version.txt)" >> "$GITHUB_OUTPUT"
+
+      - name: 上传安装包
+        uses: actions/upload-artifact@v4
+        with:
+          name: 按键精灵-${{ steps.ver.outputs.VERSION }}-macOS-arm64
+          path: dist/*.dmg
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: 打 tag 时发布 Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.dmg
+          body: |
+            按键精灵 v${{ steps.ver.outputs.VERSION }} · macOS 安装包
+
+            下载 dmg 后双击，把「按键精灵」拖进「应用程序」。
+            未做 Apple 公证，首次打开请右键 →「打开」。
+            首次录制前请在 系统设置 → 隐私与安全性 → 辅助功能 中授权本程序。
