@@ -2304,7 +2304,7 @@ class MacroApp(tk.Tk):
 
         lines = []
         if not engine_ok:
-            lines.append("· 本机没装找图组件（pyautogui / opencv-python），"
+            lines.append("· 本机缺少找图组件（numpy / Pillow），"
                          f"{len(steps)} 个找图步骤都会被跳过")
         if missing:
             show = "、".join(str(n) for n in missing[:8])
@@ -2318,9 +2318,8 @@ class MacroApp(tk.Tk):
 
         msg = "\n".join(lines) + "\n\n"
         if not engine_ok:
-            msg += ("装一次就行（命令行里执行）：\n"
-                    "    pip install pyautogui opencv-python\n"
-                    "装完重启本程序。\n\n")
+            msg += ("这通常是安装包不完整，重新安装一次本程序即可；\n"
+                    "用源码运行时执行：pip install numpy pillow\n\n")
         msg += "仍然继续回放吗？"
         return messagebox.askyesno("找图步骤可能跑不通", msg, parent=self)
 

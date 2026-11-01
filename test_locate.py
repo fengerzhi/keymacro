@@ -150,7 +150,7 @@ app.player.image_engine_available = lambda: False
 asked["yes"].clear()
 app._check_image_steps()
 msg2 = asked["yes"][0][1] if asked["yes"] else ""
-check("缺组件时提示 pip 安装命令", "pip install pyautogui" in msg2, msg2)
+check("缺组件时提示重装程序", "重新安装" in msg2, msg2)
 check("缺组件时说明会被跳过", "跳过" in msg2, msg2)
 app.player.image_engine_available = _engine_orig
 

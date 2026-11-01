@@ -38,11 +38,13 @@ REQUIRED = {
     "PyInstaller": "pyinstaller",
     "pynput": "pynput",
     "PIL": "pillow",
+    "numpy": "numpy",       # 找图用的模板匹配（core/image_match.py）
 }
 
 # 明确排除的模块（源码零引用，纯属 hook 误收 / 未用的图片编解码器）
 EXCLUDES = (
-    "numpy",                 # 连带 numpy.libs 的 OpenBLAS 约 26 MB
+    # numpy 不能排除：找图（core/image_match.py）靠它做模板匹配，
+    # 打包后约 +20 MB，换来用户装完就能直接找图、不用再补依赖。
     "psutil",
     "yaml",
     "PIL._avif",             # 7.5 MB，AVIF 编解码

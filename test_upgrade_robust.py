@@ -286,7 +286,7 @@ def main() -> int:
                 ck("覆盖动作写进日志", len(log_after) > len(log_before),
                    f"{len(log_before)} → {len(log_after)}")
                 ck("覆盖只发生在目标目录（本项目源码没被动）",
-                   "1.7.0" in (HERE / "core" / "updater.py").read_text(
+                   "APP_VERSION" in (HERE / "core" / "updater.py").read_text(
                        encoding="utf-8"))
             else:
                 ck("Windows 下由 PowerShell 接管（跳过直接覆盖）", True)

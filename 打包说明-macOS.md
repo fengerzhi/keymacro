@@ -18,7 +18,7 @@ PyInstaller 不支持交叉编译。Windows 上只能生成 `.exe`，生成不�
 3. 打开「终端」，进到项目目录：
 
    ```bash
-   cd ~/Desktop/按键精灵-1.7.0-Windows打包
+   cd ~/Desktop/按键精灵-1.7.1-Windows打包
    ```
 
 ---
@@ -51,7 +51,7 @@ python3 build/make_macos.py     # 生成 dist/按键精灵-<版本>-macOS.dmg
 | 文件 | 用途 |
 |---|---|
 | `dist/按键精灵.app` | 应用本体，直接拖进「应用程序」即可运行 |
-| `dist/按键精灵-1.7.0-macOS.dmg` | 对外分发的安装包（含应用 + Applications 快捷方式） |
+| `dist/按键精灵-1.7.1-macOS.dmg` | 对外分发的安装包（含应用 + Applications 快捷方式） |
 
 dmg 体积通常在 20～30 MB 之间（与 Windows 版接近）。
 
@@ -59,7 +59,7 @@ dmg 体积通常在 20～30 MB 之间（与 Windows 版接近）。
 
 ## 四、用户安装步骤
 
-1. 双击 `按键精灵-1.7.0-macOS.dmg`，把「按键精灵」拖进「应用程序」。
+1. 双击 `按键精灵-1.7.1-macOS.dmg`，把「按键精灵」拖进「应用程序」。
 2. **首次打开请右键 →「打开」**。包未做 Apple 公证，直接双击会被 Gatekeeper 拦一次。
 3. 首次录制前，到 `系统设置 → 隐私与安全性 → 辅助功能` 里勾选「按键精灵」
    （并在「输入监控」里同样授权），否则热键与录制不会生效。
@@ -102,9 +102,9 @@ ad-hoc 签名换成：
 ```bash
 codesign --force --deep --options runtime \
   --sign "Developer ID Application: 你的名字 (TEAMID)" "dist/按键精灵.app"
-xcrun notarytool submit "dist/按键精灵-1.7.0-macOS.dmg" \
+xcrun notarytool submit "dist/按键精灵-1.7.1-macOS.dmg" \
   --apple-id 你的邮箱 --team-id TEAMID --password 应用专用密码 --wait
-xcrun stapler staple "dist/按键精灵-1.7.0-macOS.dmg"
+xcrun stapler staple "dist/按键精灵-1.7.1-macOS.dmg"
 ```
 
 不签名也能用，只是每个用户第一次要手动放行一次。

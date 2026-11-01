@@ -9,7 +9,7 @@
 · 键盘：单键 / 整段文本 / 组合键（Ctrl+C 等，按下顺序与释放逆序精确还原）
 · 语义指令：全选 / 复制 / 剪切 / 粘贴 / 删除 / 撤销 / 回车 / 右键菜单
 · 控制流：循环块（含嵌套）、条件（如果屏幕有某图）
-· 找图点击：模板匹配定位后点击中心（需 pyautogui + opencv，缺失时优雅降级）
+· 找图点击：内置模板匹配定位后点击中心（numpy 实现，随包提供，无需另装）
 · 容错：失败重试、随机延时抖动（防封）、随时中断、修饰键清理
 """
 
@@ -25,6 +25,7 @@ from typing import Any, Callable
 
 from pynput import keyboard, mouse
 
+from . import image_match
 from .logger import capture_screen
 from .script_model import EDIT_ACTIONS, MAC_EDIT_MAP, Event, Script
 
@@ -92,9 +93,6 @@ class Player:
         self._thread: threading.Thread | None = None
         self._f10_listener: keyboard.Listener | None = None
         self.running = False
-        # 找图能力缓存
-        self._pyautogui = None
-        self._image_ready: bool | None = None
         # 最近一次失败信息（供日志/截图使用）
         self.last_failure: tuple[str, str] | None = None
         self.last_shot: str | None = None
@@ -772,37 +770,20 @@ class Player:
 
     # ---------------- 找图 ----------------
     def image_engine_available(self) -> bool:
-        """本机是否具备找图能力（供界面提前提示，避免静默跳过）"""
-        return bool(self._ensure_image_engine())
-
-    def _ensure_image_engine(self) -> bool:
-        """惰性加载 pyautogui（可选依赖）"""
-        if self._image_ready is not None:
-            return self._image_ready
-        try:
-            import pyautogui  # type: ignore
-            pyautogui.FAILSAFE = False
-            self._pyautogui = pyautogui
-            self._image_ready = True
-        except Exception:
-            self._pyautogui = None
-            self._image_ready = False
-        return self._image_ready
+        """找图能力是否可用（内置实现，随包提供，无需另装依赖）"""
+        return image_match.engine_available()
 
     def _find_image(self, path: str | None, confidence: float):
-        """返回 (x, y) 或 None"""
+        """在屏幕上找图，返回中心坐标 (x, y) 或 None
+
+        用内置的 numpy 模板匹配（见 core/image_match.py），
+        坐标与录制/回放一致，都是物理像素。
+        """
         if not path or not os.path.exists(path):
             return None
-        if not self._ensure_image_engine():
+        if not image_match.engine_available():
             return None
-        try:
-            conf = max(0.1, min(1.0, float(confidence or 90) / 100.0))
-            box = self._pyautogui.locateCenterOnScreen(path, confidence=conf)
-            if box:
-                return int(box[0]), int(box[1])
-        except Exception:
-            return None
-        return None
+        return image_match.locate_on_screen(path, confidence or 90)
 
     def _image_exists(self, path: str | None, timeout_ms: int) -> bool:
         if not path:
