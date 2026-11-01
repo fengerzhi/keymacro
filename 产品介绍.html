@@ -1,0 +1,1327 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>按键精灵 · 系统级键鼠录制回放</title>
+<meta name="description" content="录制真实鼠标键盘操作并精确回放，注入系统级输入（isTrusted），可操作任意软件。内置指令库、找图点击、循环、单步调试与脚本库。">
+<style>
+  :root{
+    --bg:#0a0c11; --bg2:#0e1118; --panel:#12161f; --panel2:#171c27; --line:#242b3a;
+    --text:#e9eef8; --dim:#98a2b8; --dim2:#6b7488;
+    --accent:#5b8cff; --accent2:#8b5cff; --ok:#33d6a6; --warn:#ffb340; --bad:#ff6b6b;
+    --shadow:0 20px 60px rgba(0,0,0,.45);
+    --radius:16px;
+  }
+  html[data-theme="light"]{
+    --bg:#f6f8fc; --bg2:#eef2f9; --panel:#ffffff; --panel2:#f4f7fd; --line:#dde4f0;
+    --text:#131a26; --dim:#5a6478; --dim2:#8b95a8;
+    --shadow:0 18px 50px rgba(23,38,71,.10);
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font:15px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    -webkit-font-smoothing:antialiased; overflow-x:hidden;
+  }
+  body::before{
+    content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
+    background:
+      radial-gradient(900px 500px at 12% -8%, rgba(91,140,255,.20), transparent 60%),
+      radial-gradient(760px 420px at 88% 4%, rgba(139,92,255,.16), transparent 62%);
+  }
+  html[data-theme="light"] body::before{
+    background:
+      radial-gradient(900px 500px at 12% -8%, rgba(91,140,255,.14), transparent 60%),
+      radial-gradient(760px 420px at 88% 4%, rgba(139,92,255,.10), transparent 62%);
+  }
+  a{color:inherit; text-decoration:none}
+  .wrap{position:relative; z-index:1; max-width:1140px; margin:0 auto; padding:0 22px}
+
+  /* ---------- nav ---------- */
+  header.nav{
+    position:sticky; top:0; z-index:50; backdrop-filter:blur(14px);
+    background:color-mix(in srgb, var(--bg) 78%, transparent);
+    border-bottom:1px solid var(--line);
+  }
+  .nav-in{max-width:1140px; margin:0 auto; padding:12px 22px; display:flex; align-items:center; gap:14px}
+  .logo{display:flex; align-items:center; gap:10px; font-weight:700; letter-spacing:.2px}
+  .logo-mark{
+    width:32px; height:32px; border-radius:9px; display:grid; place-items:center;
+    background:linear-gradient(135deg,var(--accent),var(--accent2));
+    box-shadow:0 6px 18px rgba(91,140,255,.35); color:#fff; font-size:15px; font-weight:800;
+  }
+  .logo small{display:block; font-weight:500; font-size:11px; color:var(--dim); letter-spacing:.4px}
+  .nav-links{display:flex; gap:22px; margin-left:22px; font-size:14px; color:var(--dim)}
+  .nav-links a{transition:color .18s}
+  .nav-links a:hover{color:var(--text)}
+  .nav-right{margin-left:auto; display:flex; align-items:center; gap:10px}
+  .icon-btn{
+    width:36px; height:36px; border-radius:10px; border:1px solid var(--line);
+    background:var(--panel); color:var(--text); cursor:pointer; font-size:15px;
+    display:grid; place-items:center; transition:.18s;
+  }
+  .icon-btn:hover{border-color:var(--accent); color:var(--accent)}
+
+  .btn{
+    display:inline-flex; align-items:center; gap:8px; padding:10px 18px; border-radius:11px;
+    font-size:14px; font-weight:600; border:1px solid transparent; cursor:pointer;
+    transition:transform .16s, box-shadow .2s, background .2s, border-color .2s;
+    font-family:inherit;
+  }
+  .btn-primary{
+    background:linear-gradient(135deg,var(--accent),var(--accent2)); color:#fff;
+    box-shadow:0 10px 26px rgba(91,140,255,.32);
+  }
+  .btn-primary:hover{transform:translateY(-1px); box-shadow:0 14px 32px rgba(91,140,255,.42)}
+  .btn-ghost{background:var(--panel); border-color:var(--line); color:var(--text)}
+  .btn-ghost:hover{border-color:var(--accent); color:var(--accent)}
+  .btn-sm{padding:7px 13px; font-size:13px; border-radius:9px}
+
+  /* ---------- hero ---------- */
+  .hero{padding:74px 0 26px; display:grid; grid-template-columns:1.06fr .94fr; gap:46px; align-items:center}
+  .tag{
+    display:inline-flex; align-items:center; gap:8px; padding:5px 12px; border-radius:99px;
+    background:color-mix(in srgb, var(--accent) 14%, transparent);
+    border:1px solid color-mix(in srgb, var(--accent) 32%, transparent);
+    color:var(--accent); font-size:12.5px; font-weight:600; letter-spacing:.2px;
+  }
+  h1{font-size:46px; line-height:1.16; margin:18px 0 14px; letter-spacing:-.8px}
+  h1 .grad{
+    background:linear-gradient(120deg,var(--accent),var(--accent2) 70%);
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+  }
+  .hero p.lead{color:var(--dim); font-size:16.5px; max-width:520px; margin:0 0 26px}
+  .hero-cta{display:flex; gap:12px; flex-wrap:wrap; align-items:center}
+  .hero-meta{margin-top:18px; display:flex; gap:18px; flex-wrap:wrap; font-size:13px; color:var(--dim2)}
+  .hero-meta b{color:var(--text); font-weight:600}
+
+  /* hero 可视化：事件时间轴 */
+  .viz{
+    position:relative; border-radius:20px; border:1px solid var(--line);
+    background:linear-gradient(180deg, var(--panel), var(--bg2));
+    box-shadow:var(--shadow); padding:16px; overflow:hidden;
+  }
+  .viz-head{display:flex; align-items:center; gap:8px; padding:4px 6px 12px; border-bottom:1px solid var(--line)}
+  .dots{display:flex; gap:6px}
+  .dots i{width:9px; height:9px; border-radius:50%; background:var(--line); display:block}
+  .dots i:first-child{background:#ff6b6b77} .dots i:nth-child(2){background:#ffb34077} .dots i:nth-child(3){background:#33d6a677}
+  .viz-title{font-size:12px; color:var(--dim2); margin-left:6px; font-variant-numeric:tabular-nums}
+  .viz-live{margin-left:auto; font-size:11px; color:var(--ok); display:flex; align-items:center; gap:6px}
+  .viz-live i{width:6px; height:6px; border-radius:50%; background:var(--ok); box-shadow:0 0 0 0 rgba(51,214,166,.6); animation:pulse 1.8s infinite}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(51,214,166,.55)}70%{box-shadow:0 0 0 9px rgba(51,214,166,0)}100%{box-shadow:0 0 0 0 rgba(51,214,166,0)}}
+  .viz, .rows, .row{min-width:0}
+  .rows{padding:10px 2px 4px; display:flex; flex-direction:column; gap:2px}
+  .row{
+    display:grid; grid-template-columns:38px 1fr auto; gap:10px; align-items:center;
+    padding:7px 9px; border-radius:9px; font-size:12.8px; color:var(--dim);
+    border:1px solid transparent; transition:.2s;
+  }
+  .row.on{background:color-mix(in srgb,var(--accent) 12%,transparent); border-color:color-mix(in srgb,var(--accent) 30%,transparent); color:var(--text)}
+  .row .t{color:var(--dim2); font-variant-numeric:tabular-nums; font-size:11.5px}
+  .row .act{display:flex; align-items:center; gap:8px; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .pill{padding:1px 7px; border-radius:6px; font-size:10.5px; font-weight:700; letter-spacing:.3px}
+  .pill.mouse{background:rgba(91,140,255,.16); color:#7ea2ff}
+  .pill.key{background:rgba(51,214,166,.14); color:var(--ok)}
+  .pill.ctl{background:rgba(255,179,64,.14); color:var(--warn)}
+  .row .val{color:var(--dim2); font-size:11.5px; font-variant-numeric:tabular-nums;
+    max-width:104px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+
+  /* ---------- stats ---------- */
+  .stats{display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin:44px 0 10px}
+  .stat{
+    padding:18px 20px; border-radius:var(--radius); border:1px solid var(--line);
+    background:var(--panel); box-shadow:0 2px 0 rgba(0,0,0,.02);
+  }
+  .stat .n{font-size:26px; font-weight:800; letter-spacing:-.5px; font-variant-numeric:tabular-nums}
+  .stat .n span{font-size:14px; font-weight:600; color:var(--dim); margin-left:2px}
+  .stat .l{font-size:12.5px; color:var(--dim); margin-top:4px}
+
+  /* ---------- section ---------- */
+  section{padding:64px 0}
+  .sec-head{max-width:640px; margin-bottom:34px}
+  .kicker{font-size:12px; letter-spacing:1.6px; text-transform:uppercase; color:var(--accent); font-weight:700}
+  h2{font-size:30px; letter-spacing:-.5px; margin:10px 0 10px}
+  .sec-head p{color:var(--dim); margin:0; font-size:15px}
+
+  .cards{display:grid; grid-template-columns:repeat(3,1fr); gap:16px}
+  .card{
+    padding:22px; border-radius:var(--radius); border:1px solid var(--line);
+    background:var(--panel); transition:transform .2s, border-color .2s, box-shadow .2s;
+    position:relative; overflow:hidden;
+  }
+  .card::after{
+    content:""; position:absolute; inset:0; border-radius:inherit; pointer-events:none;
+    background:radial-gradient(320px 160px at 50% 0%, color-mix(in srgb,var(--accent) 12%,transparent), transparent 70%);
+    opacity:0; transition:opacity .25s;
+  }
+  .card:hover{transform:translateY(-3px); border-color:color-mix(in srgb,var(--accent) 38%,var(--line)); box-shadow:0 16px 34px rgba(0,0,0,.22)}
+  .card:hover::after{opacity:1}
+  .card .ico{
+    width:38px; height:38px; border-radius:11px; display:grid; place-items:center; font-size:18px;
+    background:color-mix(in srgb, var(--accent) 13%, transparent); border:1px solid color-mix(in srgb, var(--accent) 26%, transparent);
+    margin-bottom:14px;
+  }
+  .card h3{font-size:16px; margin:0 0 8px; letter-spacing:-.2px}
+  .card p{margin:0; color:var(--dim); font-size:13.6px; line-height:1.7}
+  .card code{background:var(--panel2); border:1px solid var(--line); border-radius:5px; padding:1px 6px; font-size:12.5px; color:var(--text)}
+
+  /* ---------- 试用台 ---------- */
+  .try-grid{display:grid; grid-template-columns:1fr 380px; gap:18px; align-items:start}
+  .panel{
+    border-radius:var(--radius); border:1px solid var(--line); background:var(--panel);
+    box-shadow:var(--shadow); overflow:hidden;
+  }
+  .panel-head{
+    display:flex; align-items:center; gap:10px; padding:12px 16px;
+    border-bottom:1px solid var(--line); background:var(--panel2);
+  }
+  .panel-head h3{margin:0; font-size:13.5px; letter-spacing:.2px; font-weight:700}
+  .panel-head .sub{font-size:11.5px; color:var(--dim2); margin-left:auto; font-variant-numeric:tabular-nums}
+
+  .stage{
+    position:relative; height:326px; margin:16px; border-radius:13px; overflow:hidden;
+    border:1px dashed var(--line); cursor:crosshair; outline:none; user-select:none;
+    background:
+      linear-gradient(color-mix(in srgb,var(--line) 55%,transparent) 1px, transparent 1px) 0 0/26px 26px,
+      linear-gradient(90deg, color-mix(in srgb,var(--line) 55%,transparent) 1px, transparent 1px) 0 0/26px 26px,
+      radial-gradient(600px 300px at 50% 120%, color-mix(in srgb,var(--accent) 10%,transparent), transparent 70%),
+      var(--bg2);
+  }
+  .stage:focus-visible{border-color:var(--accent)}
+  .stage .hint{
+    position:absolute; inset:auto 0 14px; text-align:center; font-size:12.5px; color:var(--dim2);
+    pointer-events:none; transition:opacity .25s;
+  }
+  .stage.busy .hint{opacity:0}
+  .trace{position:absolute; inset:0; pointer-events:none}
+  .cursor-dot{
+    position:absolute; width:14px; height:14px; margin:-7px 0 0 -7px; border-radius:50%;
+    background:var(--accent); box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 28%,transparent), 0 0 18px var(--accent);
+    transition:left .38s cubic-bezier(.22,.61,.36,1), top .38s cubic-bezier(.22,.61,.36,1);
+    opacity:0;
+  }
+  .cursor-dot.show{opacity:1}
+  .ripple{
+    position:absolute; width:14px; height:14px; margin:-7px 0 0 -7px; border-radius:50%;
+    border:2px solid var(--accent); animation:rip .62s ease-out forwards; pointer-events:none;
+  }
+  .ripple.dbl{border-color:var(--accent2)}
+  @keyframes rip{0%{transform:scale(.5); opacity:.95}100%{transform:scale(4.4); opacity:0}}
+  .drag-line{
+    position:absolute; height:2px; background:linear-gradient(90deg,transparent,var(--accent),transparent);
+    transform-origin:0 50%; opacity:0; transition:opacity .2s;
+  }
+  .keycap{
+    position:absolute; padding:3px 9px; border-radius:7px; font-size:11.5px; font-weight:700;
+    background:var(--panel2); border:1px solid color-mix(in srgb,var(--accent) 40%,var(--line));
+    color:var(--text); box-shadow:0 6px 16px rgba(0,0,0,.28); animation:cap .9s ease-out forwards;
+    pointer-events:none; white-space:nowrap;
+  }
+  @keyframes cap{0%{transform:translateY(6px) scale(.9); opacity:0}18%{transform:translateY(0) scale(1); opacity:1}100%{transform:translateY(-22px) scale(1); opacity:0}}
+
+  /* ---- 舞台里的可操作控件 ---- */
+  .stage-ui{position:absolute; inset:0; pointer-events:none}
+  .stage-ui > *{pointer-events:auto}
+  .demo-card{
+    position:absolute; left:16px; top:16px; width:152px; border-radius:11px; overflow:hidden;
+    border:1px solid var(--line); background:var(--panel); box-shadow:0 12px 26px rgba(0,0,0,.3);
+    cursor:grab; user-select:none;
+  }
+  .demo-card:active{cursor:grabbing}
+  .demo-card .bar{
+    display:flex; align-items:center; gap:6px; padding:6px 9px; font-size:10.5px; color:var(--dim2);
+    border-bottom:1px solid var(--line); background:var(--panel2);
+  }
+  .demo-card .bar b{width:7px; height:7px; border-radius:50%; background:var(--accent); display:block}
+  .demo-card .bd{padding:9px 10px 11px; font-size:11.2px; line-height:1.6; color:var(--dim)}
+  .demo-card .bd strong{display:block; color:var(--text); font-size:12px; margin-bottom:1px}
+  .demo-tools{position:absolute; right:16px; top:16px; display:flex; flex-direction:column; align-items:flex-end; gap:8px}
+  .demo-row{display:flex; gap:8px; align-items:center}
+  .demo-btn{
+    font:inherit; font-size:11.5px; font-weight:700; padding:7px 12px; border:0; border-radius:9px;
+    background:linear-gradient(135deg,var(--accent),var(--accent2)); color:#fff; cursor:pointer;
+    box-shadow:0 6px 16px rgba(91,140,255,.3); transition:transform .12s, box-shadow .2s;
+  }
+  .demo-btn:hover{box-shadow:0 8px 20px rgba(91,140,255,.42)}
+  .demo-btn:active{transform:scale(.95)}
+  .demo-btn.ghost{
+    background:var(--panel); color:var(--text); border:1px solid var(--line); box-shadow:none;
+  }
+  .demo-btn.ghost:hover{border-color:var(--accent); color:var(--accent)}
+  .demo-switch{
+    display:flex; align-items:center; gap:7px; padding:4px 10px; border-radius:99px;
+    background:var(--panel); border:1px solid var(--line); color:var(--dim); font-size:11px; cursor:pointer;
+  }
+  .demo-switch input{display:none}
+  .demo-switch i{width:26px; height:14px; border-radius:99px; background:var(--line); position:relative; transition:.2s; display:block}
+  .demo-switch i::after{
+    content:""; position:absolute; left:2px; top:2px; width:10px; height:10px; border-radius:50%;
+    background:var(--dim2); transition:.2s;
+  }
+  .demo-switch input:checked + i{background:color-mix(in srgb,var(--accent) 60%,transparent)}
+  .demo-switch input:checked + i::after{left:14px; background:#fff}
+  .stage-rec{
+    position:absolute; left:14px; bottom:14px; display:none; align-items:center; gap:6px;
+    font-size:10.5px; font-weight:800; letter-spacing:1.4px; color:var(--bad);
+  }
+  .stage-rec i{width:7px; height:7px; border-radius:50%; background:var(--bad); animation:pulse 1.4s infinite}
+  .stage.busy .stage-rec{display:flex}
+
+  .demo-input{
+    position:absolute; left:50%; bottom:48px; transform:translateX(-50%);
+    width:300px; max-width:calc(100% - 32px); font:inherit; font-size:12px; padding:8px 12px;
+    border-radius:9px; border:1px solid var(--line); background:var(--panel2); color:var(--text);
+    outline:none; transition:border-color .18s, box-shadow .18s; pointer-events:auto;
+  }
+  .demo-input:focus{border-color:var(--accent); box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 16%,transparent)}
+  .demo-input::placeholder{color:var(--dim2)}
+  .ctx-menu{
+    position:absolute; z-index:7; min-width:138px; padding:5px; display:none;
+    border-radius:10px; border:1px solid var(--line); background:var(--panel2); box-shadow:var(--shadow);
+    font-size:12px;
+  }
+  .ctx-menu.show{display:block}
+  .ctx-menu div{padding:6px 10px; border-radius:6px; color:var(--dim); cursor:pointer}
+  .ctx-menu div:hover{background:color-mix(in srgb,var(--accent) 16%,transparent); color:var(--text)}
+  .ctx-menu .sep{height:1px; background:var(--line); margin:4px 6px; padding:0; cursor:default}
+  .ctx-menu .sep:hover{background:var(--line)}
+
+  .rec-bar{display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:0 16px 14px}
+  .rec-dot{width:8px; height:8px; border-radius:50%; background:var(--dim2); transition:.2s}
+  .rec-dot.live{background:var(--bad); box-shadow:0 0 0 4px rgba(255,107,107,.18); animation:pulse 1.6s infinite}
+  .spacer{flex:1}
+  .select{
+    background:var(--panel2); border:1px solid var(--line); color:var(--text);
+    border-radius:9px; padding:7px 10px; font-size:13px; font-family:inherit; cursor:pointer;
+  }
+  .progress{height:3px; background:var(--line); border-radius:2px; margin:0 16px 14px; overflow:hidden}
+  .progress i{display:block; height:100%; width:0; background:linear-gradient(90deg,var(--accent),var(--accent2)); transition:width .1s linear}
+
+  .list{max-height:326px; overflow:auto}
+  .ev{
+    display:grid; grid-template-columns:26px 52px 1fr; gap:8px; align-items:center;
+    padding:8px 14px; font-size:12.6px; border-bottom:1px solid color-mix(in srgb,var(--line) 60%,transparent);
+    color:var(--dim); transition:background .15s;
+  }
+  .ev:hover{background:var(--panel2)}
+  .ev.on{background:color-mix(in srgb,var(--accent) 14%,transparent); color:var(--text)}
+  .ev .idx{color:var(--dim2); font-size:11px; font-variant-numeric:tabular-nums}
+  .ev .tt{color:var(--dim2); font-size:11px; font-variant-numeric:tabular-nums}
+  .empty{padding:38px 18px; text-align:center; color:var(--dim2); font-size:12.8px; line-height:2}
+
+  /* ---------- 精度测试 ---------- */
+  .acc-grid{display:grid; grid-template-columns:1fr 1fr; gap:18px; align-items:start}
+  .target-wrap{
+    position:relative; height:326px; margin:16px; border-radius:13px; overflow:hidden;
+    border:1px solid var(--line); cursor:crosshair; user-select:none;
+    background:
+      radial-gradient(circle at 50% 50%, color-mix(in srgb,var(--accent) 8%,transparent), transparent 60%),
+      var(--bg2);
+  }
+  .target{position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); width:0; height:0}
+  .target .ring{
+    position:absolute; left:50%; top:50%; width:28px; height:28px; margin:-14px 0 0 -14px;
+    border-radius:50%; border:2px dashed color-mix(in srgb,var(--accent) 55%,transparent);
+  }
+  .target .core{
+    position:absolute; left:50%; top:50%; width:12px; height:12px; margin:-6px 0 0 -6px;
+    border-radius:50%; background:var(--accent); box-shadow:0 0 16px var(--accent);
+  }
+  .target .cross-h, .target .cross-v{position:absolute; left:50%; top:50%; background:color-mix(in srgb,var(--accent) 30%,transparent)}
+  .target .cross-h{width:70px; height:1px; margin-left:-35px}
+  .target .cross-v{width:1px; height:70px; margin-top:-35px}
+  .mark{
+    position:absolute; width:8px; height:8px; margin:-4px 0 0 -4px; border-radius:50%;
+    background:var(--ok); box-shadow:0 0 8px color-mix(in srgb,var(--ok) 60%,transparent); pointer-events:none;
+  }
+  .mark.miss{background:var(--warn); box-shadow:0 0 8px color-mix(in srgb,var(--warn) 60%,transparent)}
+  .acc-side{display:flex; flex-direction:column; gap:14px}
+  .kv{display:grid; grid-template-columns:1fr 1fr; gap:10px}
+  .kv .box{padding:12px 14px; border-radius:12px; border:1px solid var(--line); background:var(--panel2)}
+  .kv .box .k{font-size:11.5px; color:var(--dim2)}
+  .kv .box .v{font-size:19px; font-weight:800; font-variant-numeric:tabular-nums; letter-spacing:-.3px}
+  .kv .box .v.ok{color:var(--ok)} .kv .box .v.warn{color:var(--warn)} .kv .box .v.bad{color:var(--bad)}
+  .verdict{padding:14px 16px; border-radius:12px; border:1px solid var(--line); background:var(--panel2); font-size:13.4px; line-height:1.75}
+  .verdict b{color:var(--text)}
+  .verdict.ok{border-color:color-mix(in srgb,var(--ok) 40%,var(--line))}
+  .verdict.warn{border-color:color-mix(in srgb,var(--warn) 40%,var(--line))}
+  .verdict.bad{border-color:color-mix(in srgb,var(--bad) 40%,var(--line))}
+  #scatter{display:block; width:100%; height:auto; border-radius:12px; background:var(--bg2); border:1px solid var(--line)}
+
+  /* ---------- steps ---------- */
+  .steps{display:grid; grid-template-columns:repeat(3,1fr); gap:16px; counter-reset:s}
+  .step{
+    position:relative; padding:24px 22px 22px; border-radius:var(--radius);
+    border:1px solid var(--line); background:var(--panel);
+  }
+  .step .num{
+    width:30px; height:30px; border-radius:9px; display:grid; place-items:center; font-weight:800; font-size:14px;
+    background:linear-gradient(135deg,var(--accent),var(--accent2)); color:#fff; margin-bottom:14px;
+  }
+  .step h3{font-size:15.5px; margin:0 0 8px}
+  .step p{margin:0; color:var(--dim); font-size:13.4px}
+  .step code{background:var(--panel2); border:1px solid var(--line); border-radius:5px; padding:1px 6px; font-size:12.2px}
+
+  /* ---------- download ---------- */
+  .dl{
+    display:grid; grid-template-columns:1fr auto; gap:26px; align-items:center;
+    padding:32px; border-radius:20px; border:1px solid var(--line);
+    background:
+      radial-gradient(600px 240px at 12% 0%, color-mix(in srgb,var(--accent) 16%,transparent), transparent 70%),
+      var(--panel);
+    box-shadow:var(--shadow);
+  }
+  .dl h2{margin:0 0 8px}
+  .dl p{color:var(--dim); margin:0 0 6px; font-size:14px}
+  .dl .req{display:flex; gap:16px; flex-wrap:wrap; font-size:12.5px; color:var(--dim2); margin-top:14px}
+  .dl .req span{display:flex; align-items:center; gap:6px}
+  .dl-actions{display:flex; flex-direction:column; gap:10px; min-width:220px}
+  .dl-actions .btn{justify-content:center}
+  .copy-tip{font-size:11.5px; color:var(--dim2); text-align:center; min-height:16px}
+
+  /* ---------- faq ---------- */
+  .faq{display:flex; flex-direction:column; gap:10px}
+  details{
+    border:1px solid var(--line); border-radius:12px; background:var(--panel); overflow:hidden;
+  }
+  summary{
+    padding:15px 18px; cursor:pointer; font-size:14.2px; font-weight:600; list-style:none;
+    display:flex; align-items:center; gap:10px;
+  }
+  summary::-webkit-details-marker{display:none}
+  summary::before{content:"+"; color:var(--accent); font-weight:800; font-size:15px; width:12px}
+  details[open] summary::before{content:"−"}
+  details p{margin:0; padding:0 18px 16px 40px; color:var(--dim); font-size:13.5px}
+
+  footer{
+    border-top:1px solid var(--line); margin-top:40px; padding:28px 0 40px;
+    color:var(--dim2); font-size:12.5px;
+  }
+  footer .wrap{display:flex; gap:16px; flex-wrap:wrap; align-items:center}
+  footer .spacer{flex:1}
+
+  .toast{
+    position:fixed; left:50%; bottom:28px; transform:translate(-50%,16px); z-index:99;
+    background:var(--panel2); border:1px solid var(--line); color:var(--text);
+    padding:10px 18px; border-radius:11px; font-size:13px; box-shadow:var(--shadow);
+    opacity:0; pointer-events:none; transition:.25s;
+  }
+  .toast.show{opacity:1; transform:translate(-50%,0)}
+
+  @media (max-width:980px){
+    .hero{grid-template-columns:1fr; gap:32px; padding-top:46px}
+    h1{font-size:36px}
+    .cards{grid-template-columns:1fr 1fr}
+    .stats{grid-template-columns:1fr 1fr}
+    .try-grid, .acc-grid{grid-template-columns:1fr}
+    .steps{grid-template-columns:1fr}
+    .dl{grid-template-columns:1fr}
+    .nav-links{display:none}
+  }
+  @media (max-width:600px){
+    .cards{grid-template-columns:1fr}
+    h1{font-size:30px}
+    h2{font-size:24px}
+    .nav-right .btn{display:none}     /* 小屏只留主题切换，避免撑出横向滚动 */
+    .row .val{max-width:72px}
+    .stage, .target-wrap{height:270px}
+    .wrap{padding:0 16px}
+  }
+  @media (prefers-reduced-motion:reduce){
+    *{animation-duration:.01ms !important; transition-duration:.01ms !important}
+    html{scroll-behavior:auto}
+  }
+</style>
+</head>
+<body>
+
+<header class="nav">
+  <div class="nav-in">
+    <div class="logo">
+      <div class="logo-mark">⌨</div>
+      <div>按键精灵<small>Desktop Automation</small></div>
+    </div>
+    <nav class="nav-links">
+      <a href="#features">功能</a>
+      <a href="#try">在线试用</a>
+      <a href="#accuracy">精度测试</a>
+      <a href="#download">下载</a>
+    </nav>
+    <div class="nav-right">
+      <button class="icon-btn" id="themeBtn" aria-label="切换主题" title="切换主题">◐</button>
+      <a class="btn btn-primary btn-sm" href="#download">免费下载</a>
+    </div>
+  </div>
+</header>
+
+<main>
+<!-- ============ HERO ============ -->
+<div class="wrap">
+  <section class="hero" style="padding-bottom:0">
+    <div>
+      <span class="tag">v1.7.0 · Windows 10/11</span>
+      <h1>录制你的操作，<br><span class="grad">让电脑自己跑一遍</span></h1>
+      <p class="lead">
+        系统级鼠标键盘录制与回放。注入的是<strong>真实输入事件</strong>（isTrusted = true），
+        不是脚本模拟——录制一次，原样回放到任意软件。
+      </p>
+      <div class="hero-cta">
+        <a class="btn btn-primary" href="#download">下载安装包</a>
+        <a class="btn btn-ghost" href="#try">先在网页里试一下 →</a>
+      </div>
+      <div class="hero-meta">
+        <span>绿色版 <b>29.3 MB</b></span>
+        <span>无需 <b>Python</b></span>
+        <span>不联网也能用</span>
+      </div>
+    </div>
+
+    <div class="viz" aria-hidden="true">
+      <div class="viz-head">
+        <div class="dots"><i></i><i></i><i></i></div>
+        <div class="viz-title">事件时间轴 · 示例脚本</div>
+        <div class="viz-live"><i></i>REC</div>
+      </div>
+      <div class="rows" id="vizRows"></div>
+    </div>
+  </section>
+
+  <div class="stats">
+    <div class="stat"><div class="n">0<span>依赖</span></div><div class="l">拷贝即用，不装运行库</div></div>
+    <div class="stat"><div class="n">14<span>px</span></div><div class="l">命中判定半径</div></div>
+    <div class="stat"><div class="n">60<span>步</span></div><div class="l">撤销 / 重做</div></div>
+    <div class="stat"><div class="n">3<span>个</span></div><div class="l">全局热键随时停</div></div>
+  </div>
+</div>
+
+<!-- ============ 功能 ============ -->
+<section id="features">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="kicker">Features</div>
+      <h2>录得准，也改得动</h2>
+      <p>录制只是开始。真正麻烦的是「录完之后怎么修」——所以事件可以逐条编辑、循环可以折叠、出错会自动跳行。</p>
+    </div>
+    <div class="cards">
+      <div class="card">
+        <div class="ico">🖱</div>
+        <h3>真实系统输入</h3>
+        <p>通过系统级事件注入，目标程序收到的是 <code>isTrusted = true</code> 的输入，与真人操作无差别。</p>
+      </div>
+      <div class="card">
+        <div class="ico">👆</div>
+        <h3>双击 / 拖拽自动识别</h3>
+        <p>400ms、6px 内两次左键自动合并为双击；按下移动超过 6px 判定拖拽，回放按 12 步真实轨迹移动。</p>
+      </div>
+      <div class="card">
+        <div class="ico">⌨</div>
+        <h3>组合键精确还原</h3>
+        <p>Ctrl+C、Ctrl+Shift+S 这类组合键按「按下顺序 / 释放逆序」还原，中文文本自动聚合。</p>
+      </div>
+      <div class="card">
+        <div class="ico">🎯</div>
+        <h3>屏幕取点工具</h3>
+        <p>半透明全屏覆盖 + 十字线跟随 + 实时坐标气泡，连取两点自动生成拖拽指令。</p>
+      </div>
+      <div class="card">
+        <div class="ico">⌘</div>
+        <h3>全局热键</h3>
+        <p><code>F9</code> 停止录制 · <code>F10</code> 中断回放 · <code>F11</code> 一键开始/停止，程序在后台也生效。</p>
+      </div>
+      <div class="card">
+        <div class="ico">🔁</div>
+        <h3>循环与单步调试</h3>
+        <p>支持嵌套循环块；「单步」执行选中行、「执行到此」跑到指定行，逐段验证不用整段重跑。</p>
+      </div>
+      <div class="card">
+        <div class="ico">🖼</div>
+        <h3>找图点击 / 条件执行</h3>
+        <p>模板匹配定位并点击中心；「屏幕出现某图才继续」的条件分支。缺组件时提前告诉你第几步、缺什么。</p>
+      </div>
+      <div class="card">
+        <div class="ico">📦</div>
+        <h3>单文件脚本包 .ajjl</h3>
+        <p>脚本 + 图片 + 数据表装进一个文件，发给别人不会「找不到图」，换台电脑照样跑。</p>
+      </div>
+      <div class="card">
+        <div class="ico">🎛</div>
+        <h3>高 DPI 校准</h3>
+        <p>开启 Per-Monitor V2 感知；仍有偏移就点「校准坐标」，按提示点两下自动算缩放与偏移。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 在线试用 ============ -->
+<section id="try">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="kicker">Live Demo</div>
+      <h2>在网页里录一段试试</h2>
+      <p>下面是网页版的迷你录制器，规则与桌面版一致：点击、双击、按住拖动、敲键盘都会被记录，然后按原时间轴回放。</p>
+    </div>
+
+    <div class="try-grid">
+      <div class="panel">
+        <div class="panel-head">
+          <h3>录制区</h3>
+          <span class="sub" id="stageMeta">0 个事件 · 0.0s</span>
+        </div>
+        <div class="stage" id="stage" tabindex="0" role="application"
+             aria-label="录制演示区：点击、双击、拖动、输入都会记录">
+          <div class="stage-ui">
+            <div class="demo-card" id="demoCard">
+              <div class="bar"><b></b>可拖动窗口</div>
+              <div class="bd"><strong>按住标题拖我</strong>移动过程会被记成一条拖拽</div>
+            </div>
+            <div class="demo-tools">
+              <div class="demo-row">
+                <button class="demo-btn" id="demoBtn" type="button">点我 <span id="demoCount">0</span></button>
+                <button class="demo-btn ghost" id="demoRight" type="button">右键</button>
+              </div>
+              <label class="demo-switch"><input type="checkbox" id="demoSwitch"><i></i>开关</label>
+            </div>
+            <input class="demo-input" id="demoInput" type="text" placeholder="在这里打字，按键会被记录">
+          </div>
+          <div class="ctx-menu" id="ctxMenu">
+            <div data-act="copy">复制</div>
+            <div data-act="paste">粘贴</div>
+            <div data-act="rename">重命名</div>
+            <div class="sep"></div>
+            <div data-act="prop">属性</div>
+          </div>
+          <div class="hint">点按钮 / 右键 / 拖窗口 / 打字，都会记进右边的列表</div>
+          <div class="stage-rec"><i></i>REC</div>
+          <div class="trace" id="trace"></div>
+        </div>
+        <div class="progress"><i id="bar"></i></div>
+        <div class="rec-bar">
+          <button class="btn btn-ghost btn-sm" id="recBtn">
+            <span class="rec-dot" id="recDot"></span><span id="recTxt">开始录制</span>
+          </button>
+          <button class="btn btn-primary btn-sm" id="playBtn">▶ 回放</button>
+          <button class="btn btn-ghost btn-sm" id="clearBtn">清空</button>
+          <span class="spacer"></span>
+          <select class="select" id="speed" aria-label="回放速度">
+            <option value="1">1× 速度</option>
+            <option value="2">2× 速度</option>
+            <option value="0.5">0.5× 速度</option>
+          </select>
+          <select class="select" id="loop" aria-label="循环次数">
+            <option value="1">1 次</option>
+            <option value="2">2 次</option>
+            <option value="3">3 次</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h3>事件列表</h3>
+          <span class="sub" id="listMeta">等待录制</span>
+        </div>
+        <div class="list" id="list">
+          <div class="empty">还没有事件<br>点左边录制区开始</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 精度测试 ============ -->
+<section id="accuracy">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="kicker">Accuracy Test</div>
+      <h2>你的坐标准不准？</h2>
+      <p>桌面版最常见的抱怨是「录完回放点偏了」。先在这里量一下：点 10 次靶心，看你的偏差是<strong>整体偏移</strong>还是<strong>比例缩放</strong>——两者的解法完全不同。</p>
+    </div>
+
+    <div class="acc-grid">
+      <div class="panel">
+        <div class="panel-head">
+          <h3>精度靶</h3>
+          <span class="sub" id="accMeta">点击靶心开始</span>
+        </div>
+        <div class="target-wrap" id="targetWrap">
+          <div class="target">
+            <div class="cross-h"></div><div class="cross-v"></div>
+            <div class="ring"></div><div class="core"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="acc-side">
+        <div class="kv">
+          <div class="box"><div class="k">点击次数</div><div class="v" id="kCount">0</div></div>
+          <div class="box"><div class="k">命中率（14px）</div><div class="v" id="kRate">—</div></div>
+          <div class="box"><div class="k">平均偏差</div><div class="v" id="kAvg">—</div></div>
+          <div class="box"><div class="k">最大偏差</div><div class="v" id="kMax">—</div></div>
+        </div>
+        <div class="verdict" id="verdict">
+          <b>怎么测：</b>把窗口缩放到 100% 和 150% 各点 10 次，对比两组的结论。若两组平均偏移方向一致，是整体偏移（可校准）；若偏差随距离变大，是缩放问题（需要 DPI 感知）。
+        </div>
+        <canvas id="scatter" width="360" height="220" aria-label="偏差分布图"></canvas>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 步骤 ============ -->
+<section id="steps">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="kicker">Get Started</div>
+      <h2>三步开始</h2>
+      <p>不需要配置环境。装完就能录，录完就能改。</p>
+    </div>
+    <div class="steps">
+      <div class="step">
+        <div class="num">1</div>
+        <h3>录制</h3>
+        <p>点「● 录制」或按 <code>F11</code>，然后正常操作一遍。双击、拖拽、组合键、中文输入都会被自动识别并归成一条条事件。</p>
+      </div>
+      <div class="step">
+        <div class="num">2</div>
+        <h3>调整</h3>
+        <p>双击任意一行改坐标、内容或间隔；用指令库插入等待、循环、找图；删错了 <code>Ctrl+Z</code> 退回去，最多 60 步。</p>
+      </div>
+      <div class="step">
+        <div class="num">3</div>
+        <h3>回放</h3>
+        <p>点「▶ 回放」，倒数 3 秒好让你切窗口。执行失败会自动跳到出错行并标红，同时留一份日志和截图。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 下载 ============ -->
+<section id="download">
+  <div class="wrap">
+    <div class="dl">
+      <div>
+        <h2>下载按键精灵 v1.7.0</h2>
+        <p>单文件安装包，双击即装，不需要预装 Python 或任何运行库。</p>
+        <p style="color:var(--dim2); font-size:13px">安装到 <code>%LOCALAPPDATA%\Programs\按键精灵</code>，创建桌面与开始菜单快捷方式，可在「程序和功能」里正常卸载。</p>
+        <div class="req">
+          <span>系统：Windows 10 / 11（64 位）</span>
+          <span>安装包：24.6 MB</span>
+          <span>安装后：29.3 MB</span>
+        </div>
+      </div>
+      <div class="dl-actions">
+        <a class="btn btn-primary" id="dlBtn" href="dist/按键精灵-1.7.0-安装程序.exe" download>下载安装包</a>
+        <button class="btn btn-ghost" id="copyBtn">复制下载链接</button>
+        <div class="copy-tip" id="copyTip">绿色版：解压即用，不写注册表</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ FAQ ============ -->
+<section id="faq">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="kicker">FAQ</div>
+      <h2>常见问题</h2>
+    </div>
+    <div class="faq">
+      <details open>
+        <summary>录完回放，点击位置整体偏了一点？</summary>
+        <p>大多数是高 DPI 缩放。先看状态栏是否显示 <code>DPI OK：Per-Monitor V2</code>；仍偏就点工具栏的「🎯 校准坐标」，按提示点两下，程序会自动算出缩放与偏移。上面那个精度靶可以帮你区分「整体偏移」和「比例缩放」。</p>
+      </details>
+      <details>
+        <summary>会不会被目标软件当成脚本？</summary>
+        <p>注入的是系统级输入事件，目标程序看到的就是普通键鼠操作。程序另外提供「随机延时抖动」和「失败重试」，用于应对对时间敏感的场景。请只在你有权操作的软件和账号上使用。</p>
+      </details>
+      <details>
+        <summary>找图点击提示缺少组件？</summary>
+        <p>找图依赖可选的图像匹配组件。回放前程序会明确提示「第几步、缺什么」，装一次即可（命令行执行）：<code>pip install pyautogui opencv-python</code>。基础录制回放不需要这些。</p>
+      </details>
+      <details>
+        <summary>Windows 提示「已保护你的电脑」或被杀软删掉？</summary>
+        <p>这是未签名程序常见的误报。选择「更多信息 → 仍要运行」即可；若被隔离，请在杀软里恢复并加入信任。安装包不联网、不写系统目录，只会在用户目录下创建程序文件和脚本数据。</p>
+      </details>
+      <details>
+        <summary>脚本怎么发给同事？</summary>
+        <p>保存时默认生成 <code>.ajjl</code> 单文件包，脚本、用到的图片和数据表都在里面。对方双击打开就能用，不会出现「找不到图」。</p>
+      </details>
+      <details>
+        <summary>怎么升级到新版本？</summary>
+        <p>程序内点「🔄 升级」：选一个升级文件夹（U 盘、同步盘、局域网共享都行），把新版本 zip 放进去，再点升级就会自动完成替换并重启。升级失败会写日志并提示是哪个文件没换成功。</p>
+      </details>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <div>© 2026 按键精灵 · 桌面版</div>
+    <div class="spacer"></div>
+    <div>本页为产品介绍与在线演示，演示数据只存在你的浏览器里，不会上传。</div>
+  </div>
+</footer>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(function(){
+  "use strict";
+  var $ = function(s){ return document.querySelector(s); };
+
+  /* ---------------- 主题 ---------------- */
+  var root = document.documentElement;
+  var saved = null;
+  try { saved = localStorage.getItem("km-theme"); } catch(e) {}
+  if (saved) root.dataset.theme = saved;
+  $("#themeBtn").addEventListener("click", function(){
+    var next = root.dataset.theme === "dark" ? "light" : "dark";
+    root.dataset.theme = next;
+    try { localStorage.setItem("km-theme", next); } catch(e) {}
+  });
+
+  var toastEl = $("#toast"), toastTimer = 0;
+  function toast(msg){
+    toastEl.textContent = msg;
+    toastEl.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function(){ toastEl.classList.remove("show"); }, 1900);
+  }
+
+  /* ---------------- Hero 动画列表 ---------------- */
+  var demoRows = [
+    { t: "0.00", kind: "mouse", label: "左键单击", val: "(760, 440)" },
+    { t: "0.20", kind: "key",   label: "输入文本", val: "HelloWorld" },
+    { t: "0.50", kind: "ctl",   label: "全选",     val: "Ctrl+A" },
+    { t: "0.65", kind: "ctl",   label: "复制",     val: "Ctrl+C" },
+    { t: "1.00", kind: "ctl",   label: "循环开始", val: "× 3" },
+    { t: "1.10", kind: "mouse", label: "找图点击", val: "btn.png +90px" },
+    { t: "1.20", kind: "ctl",   label: "循环结束", val: "" },
+    { t: "1.30", kind: "key",   label: "组合键",   val: "Ctrl+Shift+S" }
+  ];
+  var rowsBox = $("#vizRows");
+  demoRows.forEach(function(r){
+    var d = document.createElement("div");
+    d.className = "row";
+    d.innerHTML = '<span class="t">' + r.t + 's</span>' +
+      '<span class="act"><span class="pill ' + r.kind + '">' +
+      (r.kind === "mouse" ? "MOUSE" : r.kind === "key" ? "KEY" : "CTL") +
+      '</span>' + r.label + '</span>' +
+      '<span class="val">' + r.val + '</span>';
+    rowsBox.appendChild(d);
+  });
+  var vizRows = [].slice.call(rowsBox.children);
+  var vizIdx = 0;
+  setInterval(function(){
+    vizRows.forEach(function(el){ el.classList.remove("on"); });
+    vizRows[vizIdx].classList.add("on");
+    vizIdx = (vizIdx + 1) % vizRows.length;
+  }, 900);
+
+  /* ---------------- 录制 / 回放 ---------------- */
+  var stage = $("#stage"), trace = $("#trace"), list = $("#list");
+  var recBtn = $("#recBtn"), recDot = $("#recDot"), recTxt = $("#recTxt");
+  var playBtn = $("#playBtn"), clearBtn = $("#clearBtn");
+  var bar = $("#bar"), stageMeta = $("#stageMeta"), listMeta = $("#listMeta");
+  var speedSel = $("#speed"), loopSel = $("#loop");
+
+  var rec = false, playing = false, events = [], t0 = 0, rafId = 0;
+  var pendingClick = 0, lastClick = null, down = null, dragPath = null;
+  var curEl = null;
+
+  function now(){ return performance.now(); }
+
+  function stamp(){ return rec ? Math.round(now() - t0) : 0; }
+
+  function push(ev){
+    if (!rec) return;
+    if (events.length >= 400) return;
+    ev.t = stamp();
+    var last = events[events.length - 1];
+    // 连续输入合并成一条（与桌面版「录制时自动聚合成文本」一致）
+    if (last && last.type === "keytype" && ev.type === "keytype" && ev.t - last.t < 700){
+      last.text += ev.text;
+      last.t = ev.t;
+      renderEvents();
+      return;
+    }
+    if (last && last.type === ev.type && ev.type === "move") return;
+    events.push(ev);
+    renderEvents();
+  }
+
+  function renderEvents(){
+    if (!events.length){
+      list.innerHTML = '<div class="empty">还没有事件<br>点左边录制区开始</div>';
+      listMeta.textContent = "等待录制";
+      stageMeta.textContent = "0 个事件 · 0.0s";
+      return;
+    }
+    var html = "";
+    events.forEach(function(ev, i){
+      var prev = i ? events[i - 1].t : 0;
+      var gap = i ? ((ev.t - prev) / 1000).toFixed(2) : "0.00";
+      html += '<div class="ev" data-i="' + i + '">' +
+        '<span class="idx">' + (i + 1) + '</span>' +
+        '<span class="tt">' + (ev.t / 1000).toFixed(2) + 's</span>' +
+        '<span>' + describe(ev) + ' <span style="color:var(--dim2);font-size:11px">Δ' + gap + 's</span></span>' +
+        '</div>';
+    });
+    list.innerHTML = html;
+    var total = (events[events.length - 1].t / 1000).toFixed(1);
+    listMeta.textContent = events.length + " 个事件";
+    stageMeta.textContent = events.length + " 个事件 · " + total + "s";
+  }
+
+  function describe(ev){
+    var k;
+    switch (ev.type){
+      case "click": k = '<span class="pill mouse">点击</span> ' + (ev.button === "right" ? "右键" : "左键") + " (" + ev.x + ", " + ev.y + ")"; break;
+      case "dblclick": k = '<span class="pill mouse">双击</span> (' + ev.x + ", " + ev.y + ")"; break;
+      case "drag": k = '<span class="pill mouse">拖拽</span> (' + ev.x + ", " + ev.y + ") → (" + ev.x2 + ", " + ev.y2 + ")"; break;
+      case "keytype": k = '<span class="pill key">输入</span> ' + escapeHtml(ev.text); break;
+      case "hotkey": k = '<span class="pill ctl">组合键</span> ' + ev.keys.join(" + "); break;
+      default: k = ev.type;
+    }
+    return k;
+  }
+
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"]/g, function(c){
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
+    });
+  }
+
+  function stagePos(e){
+    var r = stage.getBoundingClientRect();
+    return { x: Math.round(e.clientX - r.left), y: Math.round(e.clientY - r.top) };
+  }
+
+  function setRecording(on){
+    rec = on;
+    recDot.classList.toggle("live", on);
+    recTxt.textContent = on ? "停止录制" : "开始录制";
+    stage.classList.toggle("busy", on);
+    if (on){ t0 = now(); }
+  }
+
+  recBtn.addEventListener("click", function(){
+    if (playing) return;
+    setRecording(!rec);
+    if (rec){
+      events = [];
+      renderEvents();
+      stage.focus();
+      toast("开始录制，操作会被记录");
+    } else {
+      toast("已停止录制，共 " + events.length + " 个事件");
+    }
+  });
+
+  clearBtn.addEventListener("click", function(){
+    if (playing) return;
+    events = [];
+    renderEvents();
+    trace.innerHTML = "";
+    bar.style.width = "0";
+    toast("已清空");
+  });
+
+  /* 指针事件 */
+  stage.addEventListener("mousedown", function(e){
+    if (!rec || playing) return;
+    var p = stagePos(e);
+    down = { x: p.x, y: p.y, moved: 0, path: [] };
+  });
+
+  stage.addEventListener("mousemove", function(e){
+    if (!rec || !down || playing) return;
+    var p = stagePos(e);
+    var d = Math.hypot(p.x - down.x, p.y - down.y);
+    if (d > down.moved){ down.moved = d; }
+    if (d > 6){
+      down.path = [{ x: down.x, y: down.y }, { x: p.x, y: p.y }];
+      dragPath = down.path.slice();
+    }
+  });
+
+  stage.addEventListener("mouseup", function(e){
+    if (!rec || playing || !down) return;
+    var p = stagePos(e);
+    var wasDrag = down.moved > 6;
+    var start = { x: down.x, y: down.y };
+    down = null;
+    dragPath = null;
+
+    if (wasDrag){
+      push({ type: "drag", x: start.x, y: start.y, x2: p.x, y2: p.y });
+      return;
+    }
+    // 单击 / 双击判定：400ms、6px。
+    // 单击先立即落库（保证时间轴顺序正确），若紧接着又来一次点击，
+    // 就把刚落库的那条原地升级成双击。
+    var t = now();
+    if (pendingClick && lastClick &&
+        t - lastClick.t < 400 &&
+        Math.hypot(p.x - lastClick.x, p.y - lastClick.y) < 6){
+      clearTimeout(pendingClick);
+      pendingClick = 0;
+      var first = lastClick;
+      lastClick = null;
+      if (first.idx >= 0 && events[first.idx] && events[first.idx].type === "click"){
+        events[first.idx].type = "dblclick";
+        renderEvents();
+      } else {
+        push({ type: "dblclick", x: p.x, y: p.y });
+      }
+      return;
+    }
+    var before = events.length;
+    push({ type: "click", x: p.x, y: p.y, button: e.button === 2 ? "right" : "left" });
+    var idx = events.length > before ? events.length - 1 : -1;
+    lastClick = { t: t, x: p.x, y: p.y, idx: idx };
+    pendingClick = setTimeout(function(){
+      pendingClick = 0;
+      lastClick = null;
+    }, 400);
+  });
+
+  /* 右键：舞台内统一接管（演示区不弹浏览器菜单） */
+  var ctxMenu = $("#ctxMenu");
+  stage.addEventListener("contextmenu", function(e){
+    e.preventDefault();
+    var sr = stage.getBoundingClientRect();
+    var x = Math.min(e.clientX - sr.left, sr.width - 150);
+    var y = Math.min(e.clientY - sr.top, sr.height - 130);
+    ctxMenu.style.left = Math.max(6, x) + "px";
+    ctxMenu.style.top = Math.max(6, y) + "px";
+    ctxMenu.classList.add("show");
+  });
+  ctxMenu.addEventListener("mousedown", function(e){
+    var item = e.target.closest("div[data-act]");
+    ctxMenu.classList.remove("show");
+    if (item) toast("菜单项：" + item.textContent);
+  });
+  document.addEventListener("mousedown", function(e){
+    if (!ctxMenu.contains(e.target)) ctxMenu.classList.remove("show");
+  });
+
+  /* 舞台里的演示控件：按钮计数 / 拖动窗口 / 开关 / 输入框 */
+  var demoCard = $("#demoCard"), demoInput = $("#demoInput");
+  var demoBtn = $("#demoBtn"), demoCount = 0;
+
+  demoBtn.addEventListener("click", function(){
+    demoCount++;
+    $("#demoCount").textContent = demoCount;
+  });
+
+  $("#demoSwitch").addEventListener("change", function(){
+    toast(this.checked ? "开关已打开" : "开关已关闭");
+  });
+
+  var cardDrag = null;
+  demoCard.addEventListener("mousedown", function(e){
+    if (e.button !== 0) return;
+    var r = demoCard.getBoundingClientRect();
+    cardDrag = { dx: e.clientX - r.left, dy: e.clientY - r.top };
+    e.preventDefault();          // 防止拖动时选中文字；不影响事件冒泡到舞台
+  });
+  document.addEventListener("mousemove", function(e){
+    if (!cardDrag) return;
+    var sr = stage.getBoundingClientRect();
+    var x = e.clientX - cardDrag.dx - sr.left;
+    var y = e.clientY - cardDrag.dy - sr.top;
+    x = Math.max(4, Math.min(x, sr.width - demoCard.offsetWidth - 4));
+    y = Math.max(4, Math.min(y, sr.height - demoCard.offsetHeight - 4));
+    demoCard.style.left = x + "px";
+    demoCard.style.top = y + "px";
+  });
+  document.addEventListener("mouseup", function(){ cardDrag = null; });
+
+  /* 键盘录制 */
+  stage.addEventListener("keydown", function(e){
+    if (!rec || playing) return;
+    if (["Shift","Control","Alt","Meta","CapsLock"].indexOf(e.key) >= 0) return;
+    // 输入框里要能正常打字，不能在舞台这一层把按键吞掉
+    var isField = e.target && (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA");
+    if (!isField) e.preventDefault();
+    var combo = [];
+    if (e.ctrlKey) combo.push("Ctrl");
+    if (e.shiftKey) combo.push("Shift");
+    if (e.altKey) combo.push("Alt");
+    if (e.metaKey) combo.push("Win");
+    if (combo.length){
+      var k = e.key.length === 1 ? e.key.toUpperCase() : e.key;
+      push({ type: "hotkey", keys: combo.concat([k]) });
+    } else if (e.key === "Enter"){
+      push({ type: "hotkey", keys: ["Enter"] });
+    } else if (e.key === "Backspace"){
+      push({ type: "hotkey", keys: ["Backspace"] });
+    } else if (e.key.length === 1){
+      push({ type: "keytype", text: e.key });
+    } else {
+      push({ type: "hotkey", keys: [e.key] });
+    }
+  });
+
+  /* ---------------- 回放 ---------------- */
+  function ensureCursor(){
+    if (curEl) return curEl;
+    curEl = document.createElement("div");
+    curEl.className = "cursor-dot";
+    trace.appendChild(curEl);
+    return curEl;
+  }
+
+  function ripple(x, y, dbl){
+    var r = document.createElement("div");
+    r.className = "ripple" + (dbl ? " dbl" : "");
+    r.style.left = x + "px";
+    r.style.top = y + "px";
+    trace.appendChild(r);
+    setTimeout(function(){ r.remove(); }, 700);
+  }
+
+  function keycap(text, x, y){
+    var k = document.createElement("div");
+    k.className = "keycap";
+    k.textContent = text;
+    k.style.left = Math.max(6, Math.min(x - 20, stage.clientWidth - 130)) + "px";
+    k.style.top = Math.max(6, y - 34) + "px";
+    trace.appendChild(k);
+    setTimeout(function(){ k.remove(); }, 950);
+  }
+
+  function fire(ev, i){
+    var c = ensureCursor();
+    c.classList.add("show");
+    var marks = list.querySelectorAll(".ev");
+    marks.forEach(function(m){ m.classList.remove("on"); });
+    if (marks[i]) {
+      marks[i].classList.add("on");
+      marks[i].scrollIntoView({ block: "nearest" });
+    }
+
+    if (ev.type === "click" || ev.type === "dblclick"){
+      c.style.left = ev.x + "px";
+      c.style.top = ev.y + "px";
+      setTimeout(function(){ ripple(ev.x, ev.y, ev.type === "dblclick"); }, 60);
+    } else if (ev.type === "drag"){
+      c.style.transition = "left .06s linear, top .06s linear";
+      c.style.left = ev.x + "px";
+      c.style.top = ev.y + "px";
+      ripple(ev.x, ev.y, false);
+      setTimeout(function(){
+        c.style.transition = "left .55s cubic-bezier(.3,.7,.4,1), top .55s cubic-bezier(.3,.7,.4,1)";
+        c.style.left = ev.x2 + "px";
+        c.style.top = ev.y2 + "px";
+      }, 80);
+      setTimeout(function(){
+        c.style.transition = "left .38s cubic-bezier(.22,.61,.36,1), top .38s cubic-bezier(.22,.61,.36,1)";
+        ripple(ev.x2, ev.y2, false);
+      }, 640);
+    } else if (ev.type === "keytype"){
+      keycap("⌨ " + ev.text, stage.clientWidth / 2, 60);
+    } else if (ev.type === "hotkey"){
+      keycap(ev.keys.join(" + "), stage.clientWidth / 2, 60);
+    }
+  }
+
+  function playOnce(done){
+    if (!events.length){ done(); return; }
+    var speed = parseFloat(speedSel.value) || 1;
+    var start = now();
+    var idx = 0;
+    var total = events[events.length - 1].t || 1;
+    function tick(){
+      var el = (now() - start) * speed;
+      while (idx < events.length && events[idx].t <= el){
+        fire(events[idx], idx);
+        idx++;
+      }
+      bar.style.width = Math.min(100, (el / total) * 100) + "%";
+      if (idx >= events.length){
+        bar.style.width = "100%";
+        rafId = 0;
+        done();
+        return;
+      }
+      rafId = requestAnimationFrame(tick);
+    }
+    rafId = requestAnimationFrame(tick);
+  }
+
+  playBtn.addEventListener("click", function(){
+    if (rec || playing) return;
+    if (!events.length){ toast("先录一段再回放"); return; }
+    playing = true;
+    stage.classList.add("busy");
+    playBtn.textContent = "回放中…";
+    var loops = parseInt(loopSel.value, 10) || 1;
+    var n = 0;
+    (function run(){
+      playOnce(function(){
+        n++;
+        if (n < loops){
+          setTimeout(run, 520);
+        } else {
+          playing = false;
+          playBtn.textContent = "▶ 回放";
+          stage.classList.remove("busy");
+          bar.style.width = "0";
+          if (curEl) curEl.classList.remove("show");
+          toast("回放完成");
+        }
+      });
+    })();
+  });
+
+  /* ---------------- 精度靶 ---------------- */
+  var wrap = $("#targetWrap");
+  var kCount = $("#kCount"), kRate = $("#kRate"), kAvg = $("#kAvg"), kMax = $("#kMax");
+  var verdict = $("#verdict"), accMeta = $("#accMeta");
+  var cv = $("#scatter"), g = cv.getContext("2d");
+  var HIT_R = 14;
+  var shots = [];
+
+  function cssVar(n){
+    return getComputedStyle(root).getPropertyValue(n).trim();
+  }
+
+  wrap.addEventListener("mousedown", function(e){
+    var r = wrap.getBoundingClientRect();
+    var cx = r.width / 2, cy = r.height / 2;
+    var dx = e.clientX - r.left - cx;
+    var dy = e.clientY - r.top - cy;
+    var dist = Math.hypot(dx, dy);
+    shots.push({ dx: dx, dy: dy, dist: dist, hit: dist <= HIT_R });
+
+    var m = document.createElement("div");
+    m.className = "mark" + (dist <= HIT_R ? "" : " miss");
+    m.style.left = (e.clientX - r.left) + "px";
+    m.style.top = (e.clientY - r.top) + "px";
+    wrap.appendChild(m);
+
+    stats();
+  });
+
+  function stats(){
+    var n = shots.length;
+    var hits = shots.filter(function(s){ return s.hit; }).length;
+    var avg = shots.reduce(function(a, s){ return a + s.dist; }, 0) / n;
+    var max = Math.max.apply(null, shots.map(function(s){ return s.dist; }));
+    var ax = shots.reduce(function(a, s){ return a + s.dx; }, 0) / n;
+    var ay = shots.reduce(function(a, s){ return a + s.dy; }, 0) / n;
+
+    kCount.textContent = n;
+    kRate.textContent = Math.round((hits / n) * 100) + "%";
+    kRate.className = "v " + (hits / n >= 0.8 ? "ok" : hits / n >= 0.5 ? "warn" : "bad");
+    kAvg.textContent = avg.toFixed(1) + "px";
+    kAvg.className = "v " + (avg <= 4 ? "ok" : avg <= 10 ? "warn" : "bad");
+    kMax.textContent = max.toFixed(0) + "px";
+    accMeta.textContent = n + " 次点击 · 命中 " + hits;
+
+    drawScatter(ax, ay, max);
+
+    var dpr = window.devicePixelRatio || 1;
+    var cls = "verdict", html;
+    if (n < 3){
+      html = "<b>再点几次</b>（至少 3 次，建议 10 次）统计才有意义。当前显示器缩放：" + Math.round(dpr * 100) + "%。";
+    } else if (avg <= 3 && Math.hypot(ax, ay) <= 2){
+      cls += " ok";
+      html = "<b>坐标精准</b>——平均偏差 " + avg.toFixed(1) + "px，中心几乎无偏移。如果你在桌面版也看到这个水平，问题不在程序。";
+    } else if (Math.hypot(ax, ay) > 3 && max - avg < avg * 0.9){
+      cls += " warn";
+      html = "<b>疑似整体偏移</b>——所有点朝同一方向偏（约 " + ax.toFixed(0) + ", " + ay.toFixed(0) + "px）。这种是最好修的：桌面版点「🎯 校准坐标」即可。";
+    } else if (max > avg * 2.2){
+      cls += " bad";
+      html = "<b>偏差偏大且分散</b>——离靶心越远偏差越大时，通常是缩放比例问题（DPI）。先确认状态栏是 <code>Per-Monitor V2</code>，再把显示器缩放到 100% 复测。";
+    } else {
+      cls += " warn";
+      html = "<b>轻微抖动</b>——平均 " + avg.toFixed(1) + "px、最大 " + max.toFixed(0) + "px，手抖或触摸板都会造成这个量级，属于正常范围。";
+    }
+    if (Math.abs(dpr - 1) > 0.01 && n >= 3){
+      html += "<br><span style='color:var(--dim2);font-size:12.5px'>提示：你的浏览器缩放为 " + Math.round(dpr * 100) + "%，真实程序的坐标偏移多半来自这里。</span>";
+    }
+    verdict.className = cls;
+    verdict.innerHTML = html;
+  }
+
+  function drawScatter(ax, ay, max){
+    var W = 360, H = 220, cx = W / 2, cy = H / 2, Z = 3.2;
+    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+    if (cv.width !== W * dpr){ cv.width = W * dpr; cv.height = H * dpr; }
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.clearRect(0, 0, W, H);
+
+    var line = cssVar("--line"), dim = cssVar("--dim2");
+    g.strokeStyle = line;
+    g.lineWidth = 1;
+    g.beginPath();
+    g.moveTo(0, cy); g.lineTo(W, cy);
+    g.moveTo(cx, 0); g.lineTo(cx, H);
+    g.stroke();
+
+    // 命中半径圈
+    g.strokeStyle = cssVar("--accent");
+    g.globalAlpha = .5;
+    g.setLineDash([4, 4]);
+    g.beginPath();
+    g.arc(cx, cy, HIT_R * Z, 0, Math.PI * 2);
+    g.stroke();
+    g.setLineDash([]);
+    g.globalAlpha = 1;
+
+    // 散点
+    shots.forEach(function(s){
+      g.fillStyle = s.hit ? cssVar("--ok") : cssVar("--warn");
+      g.globalAlpha = .9;
+      g.beginPath();
+      g.arc(cx + s.dx * Z, cy + s.dy * Z, 3.2, 0, Math.PI * 2);
+      g.fill();
+    });
+    g.globalAlpha = 1;
+
+    // 平均偏移向量
+    if (shots.length >= 2){
+      g.strokeStyle = cssVar("--accent2");
+      g.lineWidth = 2;
+      g.beginPath();
+      g.moveTo(cx, cy);
+      g.lineTo(cx + ax * Z, cy + ay * Z);
+      g.stroke();
+    }
+
+    g.fillStyle = dim;
+    g.font = "11px ui-monospace,monospace";
+    g.fillText("×" + Z.toFixed(1) + " 放大", 10, H - 10);
+  }
+
+  /* ---------------- 下载 ---------------- */
+  $("#copyBtn").addEventListener("click", function(){
+    var url = new URL($("#dlBtn").getAttribute("href"), location.href).href;
+    var done = function(){ $("#copyTip").textContent = "链接已复制"; toast("下载链接已复制"); };
+    if (navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(url).then(done, function(){ $("#copyTip").textContent = url; });
+    } else {
+      $("#copyTip").textContent = url;
+    }
+  });
+
+  /* 主题色变化时重绘散点图 */
+  $("#themeBtn").addEventListener("click", function(){
+    if (shots.length) {
+      var n = shots.length;
+      var ax = shots.reduce(function(a, s){ return a + s.dx; }, 0) / n;
+      var ay = shots.reduce(function(a, s){ return a + s.dy; }, 0) / n;
+      var max = Math.max.apply(null, shots.map(function(s){ return s.dist; }));
+      setTimeout(function(){ drawScatter(ax, ay, max); }, 60);
+    }
+  });
+})();
+</script>
+</body>
+</html>

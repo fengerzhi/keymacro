@@ -1,0 +1,880 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>按键精灵 · 坐标测试页</title>
+<style>
+  :root {
+    --bg: #0b0d13;
+    --panel: #131720;
+    --panel-2: #171c28;
+    --field: #0d1017;
+    --line: #262d3d;
+    --line-soft: #1d2331;
+    --text: #e8ecf5;
+    --dim: #8b95ab;
+    --accent: #5b8cff;
+    --accent-soft: rgba(91,140,255,.14);
+    --ok: #2fd07a;
+    --warn: #f7b32b;
+    --err: #ff5a72;
+    --grid-bg: #0a0d14;
+    --grid-line: rgba(91,140,255,.10);
+    --shadow: 0 8px 28px rgba(0,0,0,.35);
+    --radius: 14px;
+  }
+  html[data-theme="light"] {
+    --bg: #f4f6fb;
+    --panel: #ffffff;
+    --panel-2: #f8f9fc;
+    --field: #f2f4f9;
+    --line: #e2e7f0;
+    --line-soft: #edf0f6;
+    --text: #172033;
+    --dim: #64708a;
+    --accent: #2f6bff;
+    --accent-soft: rgba(47,107,255,.10);
+    --ok: #17a95c;
+    --warn: #d98b09;
+    --err: #e0334f;
+    --grid-bg: #fbfcff;
+    --grid-line: rgba(47,107,255,.12);
+    --shadow: 0 6px 20px rgba(24,39,75,.08);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.6 "Microsoft YaHei", -apple-system, "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+    user-select: none;
+    transition: background .25s, color .25s;
+  }
+  h1, h2, h3, p { margin: 0; }
+  b { font-weight: 600; }
+
+  /* ---------------- Header ---------------- */
+  header {
+    position: sticky; top: 0; z-index: 20;
+    display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+    padding: 14px 26px;
+    background: var(--bg);
+    background: color-mix(in srgb, var(--bg) 82%, transparent);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--line);
+  }
+  .brand { display: flex; align-items: center; gap: 12px; margin-right: auto; }
+  .logo {
+    width: 34px; height: 34px; border-radius: 10px; flex: none;
+    display: grid; place-items: center;
+    background: linear-gradient(140deg, var(--accent), #8f6bff);
+    box-shadow: 0 4px 14px var(--accent-soft);
+  }
+  .logo svg { width: 19px; height: 19px; fill: #fff; }
+  .brand h1 { font-size: 16px; font-weight: 650; letter-spacing: .2px; }
+  .brand .sub { font-size: 11.5px; color: var(--dim); }
+
+  .chips { display: flex; gap: 8px; flex-wrap: wrap; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 5px 11px; border-radius: 999px;
+    background: var(--panel); border: 1px solid var(--line);
+    font-size: 12px; color: var(--dim); white-space: nowrap;
+  }
+  .chip b { color: var(--text); font-variant-numeric: tabular-nums; font-weight: 600; }
+  .chip.live b { color: var(--accent); }
+
+  /* ---------------- Layout ---------------- */
+  main {
+    max-width: 1240px; margin: 0 auto;
+    padding: 24px 26px 56px;
+    display: grid; grid-template-columns: 1.35fr 1fr; gap: 18px;
+    align-items: start;
+  }
+  .span-2 { grid-column: 1 / -1; }
+  @media (max-width: 1040px) {
+    main { grid-template-columns: 1fr; padding: 18px 16px 48px; }
+  }
+
+  .card {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: var(--radius); padding: 18px 20px 20px;
+    box-shadow: var(--shadow);
+  }
+  .card + .card { margin-top: 0; }
+  .card h2 {
+    font-size: 14px; font-weight: 650;
+    display: flex; align-items: center; gap: 9px; margin-bottom: 6px;
+  }
+  .card h2 .num {
+    width: 21px; height: 21px; border-radius: 7px; flex: none;
+    background: var(--accent-soft); color: var(--accent);
+    font-size: 11.5px; font-weight: 700;
+    display: grid; place-items: center;
+  }
+  .card h2 .tail { margin-left: auto; }
+  .hint { color: var(--dim); font-size: 12.5px; margin-bottom: 14px; }
+
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .sep { height: 1px; background: var(--line-soft); margin: 14px 0; }
+
+  /* ---------------- Buttons ---------------- */
+  button {
+    font: inherit; font-size: 13px; padding: 8px 15px;
+    border-radius: 9px; cursor: pointer;
+    background: var(--panel-2); color: var(--text);
+    border: 1px solid var(--line);
+    transition: transform .12s, border-color .15s, background .15s, box-shadow .15s;
+  }
+  button:hover { border-color: var(--accent); color: var(--accent); }
+  button:active { transform: scale(.97); }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  button.primary {
+    background: var(--accent); border-color: var(--accent); color: #fff;
+  }
+  button.primary:hover {
+    background: color-mix(in srgb, var(--accent) 86%, #fff);
+    color: #fff; box-shadow: 0 4px 14px var(--accent-soft);
+  }
+  button.danger { color: var(--err); border-color: color-mix(in srgb, var(--err) 40%, var(--line)); }
+  button.danger:hover { border-color: var(--err); background: color-mix(in srgb, var(--err) 12%, transparent); }
+  button.ghost { background: transparent; }
+  .seg { display: inline-flex; padding: 3px; gap: 3px; background: var(--field); border: 1px solid var(--line); border-radius: 10px; }
+  .seg button { border: 0; background: transparent; padding: 5px 12px; border-radius: 7px; color: var(--dim); }
+  .seg button.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+  .seg button:hover { background: var(--accent-soft); }
+  .icon-btn {
+    width: 34px; height: 34px; padding: 0; display: grid; place-items: center;
+    border-radius: 9px;
+  }
+  .icon-btn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; }
+
+  /* ---------------- 1. 精度靶 ---------------- */
+  .stage {
+    position: relative; height: 340px; border-radius: 12px;
+    border: 1px solid var(--line); overflow: hidden; cursor: crosshair;
+    background:
+      linear-gradient(var(--grid-line) 1px, transparent 1px) 0 0/50px 50px,
+      linear-gradient(90deg, var(--grid-line) 1px, transparent 1px) 0 0/50px 50px,
+      var(--grid-bg);
+  }
+  .stage svg.link { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+  .cross { position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity .15s; }
+  .cross.on { opacity: 1; }
+  .cross .v, .cross .h { position: absolute; background: var(--accent); opacity: .5; }
+  .cross .v { width: 1px; top: 0; bottom: 0; }
+  .cross .h { height: 1px; left: 0; right: 0; }
+
+  .dot {
+    position: absolute; width: 16px; height: 16px; margin: -8px 0 0 -8px;
+    border-radius: 50%; border: 2px solid var(--err);
+    transition: border-color .15s, transform .15s;
+  }
+  .dot::after {
+    content: ''; position: absolute; inset: 4px; border-radius: 50%;
+    background: var(--err); transition: background .15s;
+  }
+  .dot .ring {
+    position: absolute; inset: -6px; border-radius: 50%;   /* 半径 8+6=14px，即命中范围 */
+    border: 1px dashed color-mix(in srgb, var(--err) 32%, transparent);
+  }
+  .dot .lbl {
+    position: absolute; left: 19px; top: -3px; font-size: 11px; font-weight: 700;
+    color: var(--err); white-space: nowrap;
+  }
+  .dot.hit { border-color: var(--ok); transform: scale(1.06); }
+  .dot.hit::after { background: var(--ok); }
+  .dot.hit .ring { border-color: color-mix(in srgb, var(--ok) 40%, transparent); }
+  .dot.hit .lbl { color: var(--ok); }
+  .dot.pop { animation: pop .32s ease-out; }
+  @keyframes pop {
+    0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--ok) 55%, transparent); }
+    100% { box-shadow: 0 0 0 26px transparent; }
+  }
+
+  .mark {
+    position: absolute; width: 9px; height: 9px; margin: -4.5px 0 0 -4.5px;
+    border-radius: 50%; background: var(--warn);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--warn) 25%, transparent);
+  }
+  .mark.ok { background: var(--ok); box-shadow: 0 0 0 2px color-mix(in srgb, var(--ok) 25%, transparent); }
+
+  .readout {
+    display: flex; gap: 14px; flex-wrap: wrap; align-items: center;
+    margin-top: 12px; font-size: 12px; color: var(--dim);
+    font-variant-numeric: tabular-nums;
+  }
+  .readout b { color: var(--text); font-weight: 600; }
+
+  .bar { height: 6px; border-radius: 999px; background: var(--field); border: 1px solid var(--line-soft); overflow: hidden; }
+  .bar i { display: block; height: 100%; width: 0; border-radius: 999px; background: linear-gradient(90deg, var(--accent), var(--ok)); transition: width .25s; }
+
+  /* ---------------- 2. 偏差分析 ---------------- */
+  .stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .stat {
+    background: var(--panel-2); border: 1px solid var(--line-soft);
+    border-radius: 11px; padding: 11px 13px;
+  }
+  .stat .k { font-size: 11.5px; color: var(--dim); }
+  .stat .v {
+    font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums;
+    margin-top: 2px; letter-spacing: -.2px;
+  }
+  .stat .v.ok { color: var(--ok); }
+  .stat .v.err { color: var(--err); }
+  .stat .v.warn { color: var(--warn); }
+
+  .scatter { display: flex; gap: 14px; align-items: center; margin-top: 14px; }
+  .scatter canvas {
+    width: 132px; height: 132px; flex: none; border-radius: 10px;
+    background: var(--field); border: 1px solid var(--line);
+  }
+  .verdict {
+    font-size: 12.5px; line-height: 1.7; color: var(--dim);
+  }
+  .verdict .tagline {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-weight: 650; color: var(--text); margin-bottom: 4px;
+  }
+  .verdict .dotmark { width: 8px; height: 8px; border-radius: 50%; background: var(--dim); }
+  .verdict.ok .dotmark { background: var(--ok); }
+  .verdict.warn .dotmark { background: var(--warn); }
+  .verdict.err .dotmark { background: var(--err); }
+
+  /* ---------------- 3. 固定目标 ---------------- */
+  .targets { display: flex; gap: 12px; flex-wrap: wrap; }
+  .target {
+    width: 56px; height: 56px; border-radius: 12px;
+    border: 2px dashed var(--line); background: var(--panel-2);
+    display: grid; place-items: center; font-size: 13px; font-weight: 650;
+    color: var(--dim); cursor: pointer;
+    transition: transform .14s, border-color .15s, color .15s, background .15s;
+  }
+  .target:hover { border-color: var(--accent); color: var(--accent); transform: translateY(-2px); }
+  .target.done {
+    border-style: solid; border-color: var(--ok); color: var(--ok);
+    background: color-mix(in srgb, var(--ok) 13%, transparent);
+  }
+
+  /* ---------------- 4/5. 鼠标与键盘 ---------------- */
+  .btnrow { display: flex; gap: 10px; flex-wrap: wrap; }
+  .btnrow button { min-width: 116px; }
+  .kbd {
+    font-family: Consolas, "Courier New", monospace; font-size: 13px;
+    padding: 7px 12px; border-radius: 9px; min-width: 92px; text-align: center;
+    background: var(--field); border: 1px solid var(--line); color: var(--accent);
+    font-weight: 600;
+  }
+
+  .form { display: grid; grid-template-columns: 88px 1fr; gap: 12px 14px; align-items: center; }
+  @media (max-width: 560px) { .form { grid-template-columns: 1fr; gap: 6px 0; } }
+  .form > label { color: var(--dim); font-size: 13px; }
+  input[type=text], textarea, select {
+    font: inherit; width: 100%; padding: 9px 12px; border-radius: 9px;
+    background: var(--field); color: var(--text); border: 1px solid var(--line);
+    outline: none; transition: border-color .15s, box-shadow .15s;
+    user-select: text;
+  }
+  input[type=text]:focus, textarea:focus, select:focus {
+    border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft);
+  }
+  textarea { resize: vertical; min-height: 76px; font-family: Consolas, monospace; }
+  input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--accent); }
+  .check { display: inline-flex; align-items: center; gap: 8px; color: var(--text); }
+
+  /* ---------------- 6. 事件流 ---------------- */
+  .logbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+  .log {
+    font-family: Consolas, "Courier New", monospace; font-size: 12px;
+    background: var(--field); border: 1px solid var(--line); border-radius: 11px;
+    padding: 8px; height: 216px; overflow-y: auto; line-height: 1.7;
+  }
+  .log div {
+    display: flex; gap: 10px; padding: 2px 6px; border-radius: 6px;
+    white-space: pre-wrap; word-break: break-all;
+  }
+  .log div:hover { background: var(--panel-2); }
+  .log .t { color: var(--dim); flex: none; opacity: .75; }
+  .log .c { flex: none; width: 44px; font-size: 11px; color: var(--dim); text-align: center;
+            border-radius: 5px; background: var(--panel-2); }
+  .log .m { flex: 1; }
+  .log .click .m { color: #67c7ff; }
+  .log .dbl .m { color: #b58cff; }
+  .log .key .m { color: #f2c14e; }
+  .log .hit .m { color: var(--ok); }
+  .log .miss .m { color: var(--err); }
+  .log .sys .m { color: var(--dim); }
+  html[data-filter="mouse"] .log div:not(.click):not(.dbl):not(.hit):not(.miss) { display: none; }
+  html[data-filter="key"] .log div:not(.key) { display: none; }
+  html[data-filter="sys"] .log div:not(.sys) { display: none; }
+
+  footer {
+    max-width: 1240px; margin: 0 auto; padding: 0 26px 40px;
+    color: var(--dim); font-size: 12px; line-height: 1.9;
+  }
+  kbd {
+    font-family: Consolas, monospace; font-size: 11px; padding: 1px 6px;
+    border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5px;
+    background: var(--panel-2); color: var(--text);
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <div class="logo">
+      <svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 .001 20.001A10 10 0 0 0 12 2zm0 3a7 7 0 1 1 0 14 7 7 0 0 1 0-14zm0 3a4 4 0 1 0 0 8 4 4 0 0 0 0-8zm0 2.5a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3z"/></svg>
+    </div>
+    <div>
+      <h1>按键精灵 · 坐标测试页</h1>
+      <div class="sub">录制 → 回放 → 用本页核对坐标是否精准</div>
+    </div>
+  </div>
+
+  <div class="chips">
+    <span class="chip">视口 <b id="vp">—</b></span>
+    <span class="chip live">页面坐标 <b id="pg">0 , 0</b></span>
+    <span class="chip">DPR <b id="dpr">—</b></span>
+    <span class="chip">缩放 <b id="zoom">—</b></span>
+    <button class="icon-btn ghost" id="themeBtn" title="切换主题（T）" aria-label="切换主题">
+      <svg viewBox="0 0 24 24"><path d="M12 4V2m0 20v-2m8-8h2M2 12h2m13.66-5.66 1.41-1.41M4.93 19.07l1.41-1.41m0-11.32L4.93 4.93m14.14 14.14-1.41-1.41M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10z"/></svg>
+    </button>
+  </div>
+</header>
+
+<main>
+
+  <!-- ============ 1. 精度靶 ============ -->
+  <section class="card">
+    <h2><span class="num">1</span>精度靶 · 点击红点看是否命中中心
+      <span class="tail">
+        <span class="seg" id="modeSeg">
+          <button data-mode="3" class="on">3 × 3</button>
+          <button data-mode="5">5 × 5</button>
+        </span>
+      </span>
+    </h2>
+    <p class="hint">用按键精灵录制点击这些红点再回放；虚线圈是 14px 命中范围，命中后变绿。回放前先「重置」。</p>
+
+    <div class="stage" id="stage">
+      <svg class="link" id="link"></svg>
+      <div class="cross" id="cross"><div class="v"></div><div class="h"></div></div>
+    </div>
+
+    <div class="readout">
+      <span>靶内坐标 <b id="inPos">—</b></span>
+      <span>靶区尺寸 <b id="stageSize">—</b></span>
+      <span>命中半径 <b>14 px</b></span>
+    </div>
+
+    <div class="row" style="margin-top:12px">
+      <button class="primary" onclick="resetTargets()">重置靶点</button>
+      <span style="font-size:12.5px;color:var(--dim)">命中 <b id="hitCount" style="color:var(--ok)">0</b> / <b id="totalCount">9</b></span>
+      <div class="bar" style="flex:1;min-width:120px"><i id="hitBar"></i></div>
+    </div>
+  </section>
+
+  <!-- ============ 2. 偏差分析 ============ -->
+  <section class="card">
+    <h2><span class="num">2</span>坐标偏差分析</h2>
+    <p class="hint">记录每次点击与最近靶心的偏差，判断「整体偏移 / 按比例缩放 / 随机抖动」。</p>
+
+    <div class="stats">
+      <div class="stat"><div class="k">最近点击（视口）</div><div class="v" id="sLast">—</div></div>
+      <div class="stat"><div class="k">最近偏差</div><div class="v" id="sDev">—</div></div>
+      <div class="stat"><div class="k">平均偏差</div><div class="v" id="sAvg">—</div></div>
+      <div class="stat"><div class="k">命中率</div><div class="v" id="sRate">—</div></div>
+    </div>
+
+    <div class="scatter">
+      <canvas id="scatter" width="132" height="132" aria-label="偏差分布图"></canvas>
+      <div class="verdict" id="verdict">
+        <div class="tagline"><span class="dotmark"></span><span id="verdictText">等待点击数据…</span></div>
+        <div id="verdictDetail">在靶区点击后，这里会给出偏差结论与建议。</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 3. 固定目标 ============ -->
+  <section class="card span-2">
+    <h2><span class="num">3</span>固定目标 · 验证「点得到指定位置」</h2>
+    <p class="hint">适合用取点工具或指令库手动填入固定坐标后测试；8 个全部点亮即通过。</p>
+    <div class="targets" id="targets"></div>
+    <div class="row" style="margin-top:14px">
+      <button onclick="resetFixed()">重置</button>
+      <span style="font-size:12.5px;color:var(--dim)">已点亮 <b id="tCount" style="color:var(--ok)">0</b> / 8</span>
+    </div>
+  </section>
+
+  <!-- ============ 4. 鼠标按钮 ============ -->
+  <section class="card">
+    <h2><span class="num">4</span>鼠标按钮 · 左键 / 右键 / 双击 / 悬停</h2>
+    <p class="hint">回放脚本时看哪个按钮被点亮；右键应弹出浏览器菜单。</p>
+    <div class="btnrow">
+      <button class="primary" onmousedown="markBtn(event,'左键')" oncontextmenu="event.preventDefault();markBtn(event,'右键')">左键 / 右键都点我</button>
+      <button ondblclick="markBtn(event,'双击')">双击我</button>
+      <button onmouseenter="markBtn(event,'悬停')">鼠标移上来</button>
+      <button class="danger" onclick="clearAll()">清空全部记录</button>
+    </div>
+    <div class="row" style="margin-top:14px">
+      <span style="font-size:12.5px;color:var(--dim)">最近触发</span>
+      <span class="kbd" id="lastBtn">—</span>
+    </div>
+  </section>
+
+  <!-- ============ 5. 键盘输入 ============ -->
+  <section class="card">
+    <h2><span class="num">5</span>键盘输入 · 文本 / 组合键</h2>
+    <p class="hint">回放带输入或复制粘贴的脚本时，看输入框内容是否正确。</p>
+    <div class="form">
+      <label for="inp1">单行输入</label>
+      <input type="text" id="inp1" placeholder="回放时自动输入的文本会出现在这里">
+
+      <label for="inp2">多行文本</label>
+      <textarea id="inp2" placeholder="多行输入 / 粘贴 测试"></textarea>
+
+      <label for="sel1">下拉选择</label>
+      <select id="sel1">
+        <option>选项一</option><option>选项二</option><option>选项三</option>
+      </select>
+
+      <label>复选框</label>
+      <label class="check"><input type="checkbox" id="chk1"> 点我切换（测试精确点击）</label>
+    </div>
+    <div class="row" style="margin-top:14px">
+      <button onclick="fillDemo()">填充示例文本</button>
+      <button class="ghost" onclick="clearText()">清空文本</button>
+      <span style="font-size:12.5px;color:var(--dim)">最近按键</span>
+      <span class="kbd" id="lastKey">—</span>
+    </div>
+  </section>
+
+  <!-- ============ 6. 事件流 ============ -->
+  <section class="card span-2">
+    <h2><span class="num">6</span>事件流 · 实时记录鼠标键盘</h2>
+    <p class="hint">每次点击都记录坐标与判定结果，回放后可逐条对照脚本核对。</p>
+
+    <div class="logbar">
+      <span class="seg" id="filterSeg">
+        <button data-f="all" class="on">全部</button>
+        <button data-f="mouse">鼠标</button>
+        <button data-f="key">键盘</button>
+        <button data-f="sys">系统</button>
+      </span>
+      <label class="check" style="font-size:12.5px;color:var(--dim)">
+        <input type="checkbox" id="autoScroll" checked> 自动滚动
+      </label>
+      <span style="margin-left:auto"></span>
+      <button class="ghost" onclick="copyLog()">复制</button>
+      <button class="ghost" onclick="exportLog()">导出 txt</button>
+      <button class="ghost" onclick="clearLog()">清空</button>
+    </div>
+
+    <div class="log" id="log"></div>
+  </section>
+
+</main>
+
+<footer>
+  快捷键：<kbd>R</kbd> 重置靶点 · <kbd>C</kbd> 清空事件流 · <kbd>T</kbd> 切换主题（输入框聚焦时不生效）
+</footer>
+
+<script>
+/* ============================================================ 基础 */
+const $ = id => document.getElementById(id);
+const HIT_R = 14;                 // 命中半径（px）
+const SCATTER_ZOOM = 3;           // 偏差图放大倍数
+const stage = $('stage'), linkSvg = $('link');
+
+let dots = [], samples = [], hits = new Set();
+let devSum = 0, devN = 0, maxDev = 0;
+let mode = 3;
+
+const pad = (n, w = 2) => String(n).padStart(w, '0');
+function now() {
+  const d = new Date();
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${pad(d.getMilliseconds(), 3)}`;
+}
+
+/* ---------------- 事件流 ---------------- */
+const CAT_NAME = { click: '鼠标', dbl: '鼠标', hit: '鼠标', miss: '鼠标', key: '键盘', sys: '系统' };
+function log(text, cls = 'sys') {
+  const el = document.createElement('div');
+  el.className = cls;
+  el.innerHTML = `<span class="t">${now()}</span>`
+               + `<span class="c">${CAT_NAME[cls] || '系统'}</span>`
+               + `<span class="m"></span>`;
+  el.querySelector('.m').textContent = text;
+  const box = $('log');
+  box.appendChild(el);
+  if (box.children.length > 400) box.removeChild(box.firstChild);
+  if ($('autoScroll').checked) box.scrollTop = box.scrollHeight;
+}
+function clearLog() { $('log').innerHTML = ''; log('事件流已清空', 'sys'); }
+function copyLog() {
+  const text = [...$('log').children].map(n => n.textContent).join('\n');
+  (navigator.clipboard?.writeText(text) || Promise.reject())
+    .then(() => log(`已复制 ${$('log').children.length} 条记录`, 'sys'))
+    .catch(() => log('复制失败，请改用「导出 txt」', 'sys'));
+}
+function exportLog() {
+  const lines = [...$('log').children].map(n => n.textContent);
+  const blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = '事件流_' + Date.now() + '.txt';
+  a.click();
+  URL.revokeObjectURL(a.href);
+  log('事件流已导出', 'sys');
+}
+
+/* ---------------- 头部信息 ---------------- */
+function updateInfo() {
+  $('vp').textContent = `${innerWidth} × ${innerHeight}`;
+  $('dpr').textContent = devicePixelRatio;
+  $('zoom').textContent = devicePixelRatio.toFixed(2) + 'x';
+  $('stageSize').textContent = `${stage.clientWidth} × ${stage.clientHeight}`;
+}
+addEventListener('resize', () => { updateInfo(); buildTargets(true); });
+addEventListener('scroll', () => updatePointer(lastPointer), { passive: true });
+
+let lastPointer = { x: 0, y: 0 };
+let rafId = 0;
+addEventListener('mousemove', e => {
+  lastPointer = { x: e.clientX, y: e.clientY };
+  if (!rafId) rafId = requestAnimationFrame(() => { rafId = 0; updatePointer(lastPointer); });
+}, { passive: true });
+function updatePointer(p) {
+  $('pg').textContent = `${Math.round(p.x + scrollX)} , ${Math.round(p.y + scrollY)}`;
+}
+
+/* ---------------- 主题 ---------------- */
+function setTheme(t) {
+  document.documentElement.dataset.theme = t;
+  try { localStorage.setItem('km-test-theme', t); } catch (e) {}
+  drawScatter();
+}
+(function initTheme() {
+  let saved = 'dark';
+  try { saved = localStorage.getItem('km-test-theme') || 'dark'; } catch (e) {}
+  setTheme(saved);
+})();
+$('themeBtn').onclick = () =>
+  setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
+
+/* ============================================================ 1. 精度靶 */
+function targetLayout() {
+  const pct = mode === 3 ? [10, 50, 90] : [10, 30, 50, 70, 90];
+  const out = [];
+  for (const py of pct) for (const px of pct) out.push([px, py]);
+  return out;
+}
+
+function buildTargets(keepState) {
+  const w = stage.clientWidth, h = stage.clientHeight;
+  const prev = new Set(dots.filter(d => d.el.classList.contains('hit')).map(d => d.i));
+  stage.querySelectorAll('.dot,.mark').forEach(n => n.remove());
+  dots = [];
+  targetLayout().forEach(([px, py], i) => {
+    const el = document.createElement('div');
+    el.className = 'dot';
+    el.style.left = (w * px / 100) + 'px';
+    el.style.top = (h * py / 100) + 'px';
+    el.innerHTML = `<span class="ring"></span><span class="lbl">${i + 1}</span>`;
+    if (keepState && prev.has(i)) el.classList.add('hit');
+    stage.appendChild(el);
+    dots.push({ i, x: w * px / 100, y: h * py / 100, el });
+  });
+  hits = new Set(dots.filter(d => d.el.classList.contains('hit')).map(d => d.i));
+  $('totalCount').textContent = dots.length;
+  refreshCount();
+  updateInfo();
+}
+
+function nearestDot(clientX, clientY) {
+  const r = stage.getBoundingClientRect();
+  const lx = clientX - r.left, ly = clientY - r.top;
+  let best = null, bestD = Infinity;
+  for (const d of dots) {
+    const dist = Math.hypot(lx - d.x, ly - d.y);
+    if (dist < bestD) { bestD = dist; best = d; }
+  }
+  return { dot: best, dist: bestD, lx, ly, rect: r };
+}
+
+/* 十字准线 + 靶内坐标 */
+stage.addEventListener('mousemove', e => {
+  const r = stage.getBoundingClientRect();
+  const x = e.clientX - r.left, y = e.clientY - r.top;
+  const c = $('cross');
+  c.classList.add('on');
+  c.querySelector('.v').style.left = x + 'px';
+  c.querySelector('.h').style.top = y + 'px';
+  $('inPos').textContent = `${Math.round(x)} , ${Math.round(y)}`;
+});
+stage.addEventListener('mouseleave', () => $('cross').classList.remove('on'));
+
+stage.addEventListener('mousedown', e => {
+  if (e.button !== 0) return;
+  const { dot, dist, lx, ly, rect } = nearestDot(e.clientX, e.clientY);
+  const hit = dist <= HIT_R;
+
+  devSum += dist; devN++;
+  maxDev = Math.max(maxDev, dist);
+  samples.push({ dx: lx - dot.x, dy: ly - dot.y });
+  if (samples.length > 200) samples.shift();
+
+  /* 落点标记 + 到靶心的连线 */
+  const mk = document.createElement('div');
+  mk.className = 'mark' + (hit ? ' ok' : '');
+  mk.style.left = lx + 'px';
+  mk.style.top = ly + 'px';
+  stage.appendChild(mk);
+  while (stage.querySelectorAll('.mark').length > 40) stage.querySelector('.mark').remove();
+
+  const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+  line.setAttribute('x1', lx); line.setAttribute('y1', ly);
+  line.setAttribute('x2', dot.x); line.setAttribute('y2', dot.y);
+  line.setAttribute('stroke', hit ? 'var(--ok)' : 'var(--warn)');
+  line.setAttribute('stroke-width', '1');
+  line.setAttribute('stroke-dasharray', '3 3');
+  line.setAttribute('opacity', '.75');
+  linkSvg.appendChild(line);
+  while (linkSvg.children.length > 40) linkSvg.firstChild.remove();
+
+  if (hit) {
+    dot.el.classList.add('hit', 'pop');
+    hits.add(dot.i);
+    setTimeout(() => dot.el.classList.remove('pop'), 340);
+    refreshCount();
+  }
+
+  $('sLast').textContent = `${Math.round(e.clientX)},${Math.round(e.clientY)}`;
+  $('sDev').textContent = dist.toFixed(1) + ' px';
+  $('sDev').className = 'v ' + (dist <= 6 ? 'ok' : dist <= HIT_R ? 'warn' : 'err');
+  $('sAvg').textContent = (devSum / devN).toFixed(1) + ' px';
+  const rate = Math.round(hits.size / dots.length * 100);
+  $('sRate').textContent = rate + '%';
+  $('sRate').className = 'v ' + (rate >= 90 ? 'ok' : rate >= 60 ? 'warn' : 'err');
+
+  log(`点击 视口(${Math.round(e.clientX)},${Math.round(e.clientY)}) → 靶内(${Math.round(lx)},${Math.round(ly)}) ` +
+      (hit ? `✓ 命中 #${dot.i + 1}，偏差 ${dist.toFixed(1)}px` : `✗ 未命中，最近偏差 ${dist.toFixed(1)}px`),
+      hit ? 'hit' : 'miss');
+
+  drawScatter();
+  updateVerdict();
+});
+
+function refreshCount() {
+  $('hitCount').textContent = hits.size;
+  $('hitBar').style.width = (hits.size / dots.length * 100) + '%';
+}
+
+function resetTargets() {
+  dots.forEach(d => d.el.classList.remove('hit'));
+  hits.clear();
+  stage.querySelectorAll('.mark').forEach(n => n.remove());
+  linkSvg.innerHTML = '';
+  samples = []; devSum = 0; devN = 0; maxDev = 0;
+  refreshCount();
+  $('sLast').textContent = '—'; $('sDev').textContent = '—'; $('sDev').className = 'v';
+  $('sAvg').textContent = '—'; $('sRate').textContent = '—'; $('sRate').className = 'v';
+  drawScatter(); updateVerdict();
+  log('靶点已重置', 'sys');
+}
+
+/* ---------------- 偏差散点图 ---------------- */
+function drawScatter() {
+  const cv = $('scatter'), g = cv.getContext('2d');
+  const W = 132, C = W / 2, Z = SCATTER_ZOOM;          // 逻辑尺寸，与 CSS 一致
+  const dpr = Math.min(devicePixelRatio || 1, 2);
+  if (cv.width !== W * dpr) { cv.width = W * dpr; cv.height = W * dpr; }
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  const css = getComputedStyle(document.documentElement);
+  const col = n => css.getPropertyValue(n).trim();
+
+  g.clearRect(0, 0, W, W);
+  g.fillStyle = col('--panel-2') || '#171c28';
+  g.fillRect(0, 0, W, W);
+
+  /* 命中半径圈 */
+  g.strokeStyle = col('--ok') || '#2fd07a';
+  g.globalAlpha = .55; g.setLineDash([5, 5]); g.lineWidth = 1.5;
+  g.beginPath(); g.arc(C, C, HIT_R * Z, 0, Math.PI * 2); g.stroke();
+  g.setLineDash([]);
+  g.globalAlpha = .3;
+  g.beginPath(); g.arc(C, C, HIT_R * Z / 2, 0, Math.PI * 2); g.stroke();
+  g.globalAlpha = 1;
+
+  /* 十字轴 */
+  g.strokeStyle = col('--line') || '#262d3d'; g.lineWidth = 1;
+  g.beginPath();
+  g.moveTo(0, C); g.lineTo(W, C); g.moveTo(C, 0); g.lineTo(C, W);
+  g.stroke();
+
+  /* 样本点 */
+  for (const s of samples) {
+    const x = C + s.dx * Z, y = C + s.dy * Z;
+    const hit = Math.hypot(s.dx, s.dy) <= HIT_R;
+    g.fillStyle = hit ? col('--ok') : col('--warn');
+    g.globalAlpha = .85;
+    g.beginPath(); g.arc(x, y, 3, 0, Math.PI * 2); g.fill();
+  }
+  /* 平均偏移向量 */
+  if (samples.length) {
+    const ax = samples.reduce((a, s) => a + s.dx, 0) / samples.length;
+    const ay = samples.reduce((a, s) => a + s.dy, 0) / samples.length;
+    g.globalAlpha = 1; g.strokeStyle = col('--accent'); g.lineWidth = 2;
+    g.beginPath(); g.moveTo(C, C); g.lineTo(C + ax * Z, C + ay * Z); g.stroke();
+    g.fillStyle = col('--accent');
+    g.beginPath(); g.arc(C + ax * Z, C + ay * Z, 4, 0, Math.PI * 2); g.fill();
+  }
+  g.globalAlpha = 1;
+}
+
+function updateVerdict() {
+  const box = $('verdict'), txt = $('verdictText'), det = $('verdictDetail');
+  if (!samples.length) {
+    box.className = 'verdict';
+    txt.textContent = '等待点击数据…';
+    det.textContent = '在靶区点击后，这里会给出偏差结论与建议。';
+    return;
+  }
+  const avg = devSum / devN;
+  const ax = samples.reduce((a, s) => a + s.dx, 0) / samples.length;
+  const ay = samples.reduce((a, s) => a + s.dy, 0) / samples.length;
+  const sysLen = Math.hypot(ax, ay);
+  const rate = hits.size / dots.length;
+
+  let level, title, detail;
+  if (rate === 1 && avg <= 4) {
+    level = 'ok'; title = '坐标精准';
+    detail = `平均偏差 ${avg.toFixed(1)}px，最大 ${maxDev.toFixed(1)}px，可以放心使用。`;
+  } else if (sysLen >= 5) {
+    level = 'warn'; title = '疑似整体偏移';
+    detail = `平均偏移向量约 (${ax.toFixed(1)}, ${ay.toFixed(1)})px，长度 ${sysLen.toFixed(1)}px。`
+           + `建议给脚本坐标统一加上这个偏移，或检查录屏/回放时的窗口位置是否一致。`;
+  } else if (avg > HIT_R) {
+    level = 'err'; title = '偏差偏大 · 疑似缩放问题';
+    detail = `平均偏差 ${avg.toFixed(1)}px 已超过命中半径，且方向不固定。`
+           + `重点检查系统缩放（当前 ${devicePixelRatio.toFixed(2)}x）与浏览器缩放是否一致，`
+           + `以及回放时窗口大小/位置是否和录制时相同。`;
+  } else {
+    level = 'warn'; title = '轻微抖动';
+    detail = `平均偏差 ${avg.toFixed(1)}px，最大 ${maxDev.toFixed(1)}px，方向随机。`
+           + `属于正常抖动范围，若个别点反复不中，可加大该点的等待时间。`;
+  }
+  box.className = 'verdict ' + level;
+  txt.textContent = title;
+  det.textContent = detail;
+}
+
+/* 模式切换 */
+$('modeSeg').addEventListener('click', e => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  [...$('modeSeg').children].forEach(x => x.classList.toggle('on', x === b));
+  mode = +b.dataset.mode;
+  samples = []; devSum = 0; devN = 0; maxDev = 0;
+  linkSvg.innerHTML = '';
+  buildTargets(false);
+  drawScatter(); updateVerdict();
+  log(`靶点切换为 ${mode} × ${mode}`, 'sys');
+});
+
+/* ============================================================ 3. 固定目标 */
+const TB = $('targets');
+let doneFixed = new Set();
+for (let i = 1; i <= 8; i++) {
+  const d = document.createElement('div');
+  d.className = 'target';
+  d.textContent = i;
+  d.setAttribute('role', 'button');
+  d.onclick = () => {
+    if (doneFixed.has(i)) return;
+    doneFixed.add(i);
+    d.classList.add('done');
+    $('tCount').textContent = doneFixed.size;
+    log(`固定目标 #${i} 点亮 ✓`, 'hit');
+  };
+  TB.appendChild(d);
+}
+function resetFixed() {
+  doneFixed.clear();
+  TB.querySelectorAll('.target').forEach(n => n.classList.remove('done'));
+  $('tCount').textContent = 0;
+  log('固定目标已重置', 'sys');
+}
+
+/* ============================================================ 4. 鼠标按钮 */
+function markBtn(e, name) {
+  $('lastBtn').textContent = name;
+  log(`${name} 触发 @ 视口(${Math.round(e.clientX)},${Math.round(e.clientY)})`,
+      name === '双击' ? 'dbl' : 'click');
+}
+
+/* ============================================================ 5. 键盘 */
+addEventListener('keydown', e => {
+  const mods = [];
+  if (e.ctrlKey) mods.push('Ctrl');
+  if (e.shiftKey) mods.push('Shift');
+  if (e.altKey) mods.push('Alt');
+  const label = (mods.length ? mods.join('+') + '+' : '') + (e.key.length === 1 ? e.key : e.key);
+  $('lastKey').textContent = label;
+  log(`按键 ${label}`, 'key');
+}, true);
+
+addEventListener('input', e => {
+  if (e.target.id === 'inp1' || e.target.id === 'inp2') {
+    log(`输入框 ${e.target.id} 内容长度 ${e.target.value.length}`, 'key');
+  }
+});
+
+function fillDemo() {
+  $('inp1').value = '按键精灵测试 ' + now();
+  $('inp2').value = '第一行\n第二行\n第三行';
+  log('已填充示例文本', 'sys');
+}
+function clearText() {
+  $('inp1').value = ''; $('inp2').value = '';
+  log('文本已清空', 'sys');
+}
+
+/* ============================================================ 6. 其它 */
+$('filterSeg').addEventListener('click', e => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  [...$('filterSeg').children].forEach(x => x.classList.toggle('on', x === b));
+  document.documentElement.dataset.filter = b.dataset.f;
+});
+
+function clearAll() {
+  resetTargets(); resetFixed();
+  $('lastBtn').textContent = '—'; $('lastKey').textContent = '—';
+  $('log').innerHTML = '';
+  log('全部记录已清空', 'sys');
+}
+
+/* 快捷键 */
+addEventListener('keydown', e => {
+  const t = e.target;
+  if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) return;
+  if (e.ctrlKey || e.altKey || e.metaKey) return;
+  const k = e.key.toLowerCase();
+  if (k === 'r') { resetTargets(); }
+  else if (k === 'c') { clearLog(); }
+  else if (k === 't') { $('themeBtn').click(); }
+}, true);
+
+/* ============================================================ 初始化 */
+updateInfo();
+buildTargets(false);
+drawScatter();
+log('测试页已就绪 — 建议先用按键精灵录制点击红点，再回放验证', 'sys');
+log(`视口 ${innerWidth}×${innerHeight}　DPR ${devicePixelRatio}`, 'sys');
+</script>
+</body>
+</html>
