@@ -29,6 +29,10 @@ jobs:
     name: Windows 打包（x64）
     runs-on: windows-latest
     timeout-minutes: 30
+    env:
+      # 避免 Python 输出中文时按 cp1252 编码报 UnicodeEncodeError（会让步骤直接失败）
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: "utf-8"
 
     steps:
       - name: 检出代码
@@ -48,15 +52,19 @@ jobs:
           "VERSION=$v" >> $env:GITHUB_OUTPUT
 
       - name: 安装打包依赖
+        shell: bash
         run: |
+          set -euo pipefail
           python -m pip install --upgrade pip
-          python -m pip install "pyinstaller>=6.0" "pynput>=1.7.6" "pillow>=10"
-          python -c "import PyInstaller, pynput, PIL; print('依赖就绪')"
+          python -m pip install "pyinstaller>=6.0" "pynput>=1.7.6" "pillow>=10" "numpy>=1.24"
+          python -c "import PyInstaller, pynput, PIL, numpy; print('deps ok')"
 
       - name: 打包主程序
+        shell: bash
         run: python build/build.py
 
       - name: 生成安装程序
+        shell: bash
         run: python build/make_setup.py
 
       - name: 压缩免安装目录

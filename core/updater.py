@@ -39,15 +39,13 @@ import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 
-APP_VERSION = "1.7.1"
+APP_VERSION = "1.7.2"
 
 # 当前版本的更新说明：生成升级包时写入 notes.txt，升级窗口会自动显示
-RELEASE_NOTES = """v1.7.1
-- 找图点击改为内置实现：装完即可用，无需再单独安装 pyautogui / opencv
-- 匹配算法改为「降采样粗搜 + 原图精修」，单次找图约 0.3 秒
-- 修复纯色/低对比区域被误判为命中，以及大屏匹配出现假峰的问题
-- 找图前检查的提示改为「重新安装程序」，不再引导用户去 pip 装依赖
-- 任务栏图标这类位置会变的目标，建议用「找图点击」代替固定坐标"""
+RELEASE_NOTES = """v1.7.2
+- 内置升级地址：装好即可在「升级」窗口点「检查更新」，自动从 GitHub 取最新版
+- 升级包取 Release 里的 Windows 免安装 zip，覆盖后自动重启
+- 仓库为公开仓库，升级不需要填 Token，也不用自己填仓库地址"""
 
 
 
@@ -56,7 +54,9 @@ RELEASE_NOTES = """v1.7.1
 #   1) 静态 version.json 的 http(s) 直链
 #   2) GitHub 仓库（https://github.com/用户名/仓库名），
 #      自动取该仓库最新 Release 的 tag / 说明 / zip 附件
-DEFAULT_UPDATE_URL = ""  # 留空时打开升级窗口仅可用「从本地 zip 升级」
+# 内置默认地址：装好就能点「检查更新」，不必自己填仓库或 token。
+# 仓库为公开仓库，升级时匿名读取 Release 的 tag / 说明 / zip 附件。
+DEFAULT_UPDATE_URL = "https://github.com/fengerzhi/keymacro"
 
 UPDATE_TIMEOUT = 15          # 网络超时（秒）
 DOWNLOAD_TIMEOUT = 300       # 下载超时（秒）
