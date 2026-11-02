@@ -117,10 +117,20 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/*.dmg
+          # 只传 ASCII 名那份：dist/*.dmg 会把中文名的也带上，
+          # 而中文名会被 GitHub 清洗成 "-1.7.3-macOS.dmg"，多出一个残缺文件。
+          files: dist/keymacro-*.dmg
+          # 正文与 Windows 流程保持一致，谁最后执行都不会把说明覆盖成半个
           body: |
-            按键精灵 v${{ steps.ver.outputs.VERSION }} · macOS 安装包
+            按键精灵 v${{ steps.ver.outputs.VERSION }}
 
-            下载 dmg 后双击，把「按键精灵」拖进「应用程序」。
-            未做 Apple 公证，首次打开请右键 →「打开」。
-            首次录制前请在 系统设置 → 隐私与安全性 → 辅助功能 中授权本程序。
+            **Windows**
+            - `keymacro-${{ steps.ver.outputs.VERSION }}-windows-setup.exe`：双击安装（推荐）
+            - `keymacro-${{ steps.ver.outputs.VERSION }}-windows-portable.zip`：解压即用；也是程序内「升级 → 检查更新」下载的升级包
+
+            **macOS（Apple 芯片）**
+            - `keymacro-${{ steps.ver.outputs.VERSION }}-macos-arm64.dmg`：拖进「应用程序」，首次打开请右键 →「打开」
+
+            **升级**
+            - 程序里「升级」窗口点「检查更新」即可自动拉取本页最新版本，无需填任何地址或 Token
+            - macOS 首次录制前需在 系统设置 → 隐私与安全性 → 辅助功能 中授权本程序
