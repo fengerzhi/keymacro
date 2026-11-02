@@ -70,8 +70,13 @@ jobs:
       - name: 压缩免安装目录
         shell: pwsh
         run: |
+          $v = "${{ steps.ver.outputs.VERSION }}"
           Compress-Archive -Path "dist/按键精灵" `
-            -DestinationPath "dist/按键精灵-${{ steps.ver.outputs.VERSION }}-Windows免安装版.zip" -Force
+            -DestinationPath "dist/按键精灵-$v-Windows免安装版.zip" -Force
+          # Release 上传时中文文件名会被清洗成 "-1.7.2-.exe"，
+          # 这里再复制一份 ASCII 名，上传用 ASCII 名，用户下载后不会看到残缺文件名。
+          Copy-Item "dist/按键精灵-$v-安装程序.exe" "dist/keymacro-$v-windows-setup.exe" -Force
+          Copy-Item "dist/按键精灵-$v-Windows免安装版.zip" "dist/keymacro-$v-windows-portable.zip" -Force
           Get-ChildItem dist -File | Select-Object Name, @{n='MB';e={[math]::Round($_.Length/1MB,2)}}
 
       - name: 上传构建产物
@@ -79,8 +84,8 @@ jobs:
         with:
           name: 按键精灵-${{ steps.ver.outputs.VERSION }}-Windows
           path: |
-            dist/*.exe
-            dist/*.zip
+            dist/keymacro-*.exe
+            dist/keymacro-*.zip
           if-no-files-found: error
           retention-days: 30
 
@@ -92,6 +97,19 @@ jobs:
           # 且 macOS 流程先跑完时也能把附件追加进同一个 Release。
           tag_name: ${{ inputs.tag || github.ref_name }}
           files: |
-            dist/按键精灵-${{ steps.ver.outputs.VERSION }}-安装程序.exe
-            dist/按键精灵-${{ steps.ver.outputs.VERSION }}-Windows免安装版.zip
+            dist/keymacro-${{ steps.ver.outputs.VERSION }}-windows-setup.exe
+            dist/keymacro-${{ steps.ver.outputs.VERSION }}-windows-portable.zip
           fail_on_unmatched_files: true
+          body: |
+            按键精灵 v${{ steps.ver.outputs.VERSION }}
+
+            **Windows**
+            - `keymacro-${{ steps.ver.outputs.VERSION }}-windows-setup.exe`：双击安装（推荐）
+            - `keymacro-${{ steps.ver.outputs.VERSION }}-windows-portable.zip`：解压即用；也是程序内「升级 → 检查更新」下载的升级包
+
+            **macOS（Apple 芯片）**
+            - `keymacro-${{ steps.ver.outputs.VERSION }}-macos-arm64.dmg`：拖进「应用程序」，首次打开请右键 →「打开」
+
+            **升级**
+            - 程序里「升级」窗口点「检查更新」即可自动拉取本页最新版本，无需填任何地址或 Token
+            - macOS 首次录制前需在 系统设置 → 隐私与安全性 → 辅助功能 中授权本程序

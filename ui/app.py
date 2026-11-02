@@ -3511,6 +3511,9 @@ class MacroApp(tk.Tk):
         if not path:
             self._insert_index = None
             return
+        if not self._check_template_quality(path):
+            self._insert_index = None
+            return
         mode = simpledialog.askstring(
             "图片条件", "1 = 屏幕上有这张图\n2 = 屏幕上没有这张图",
             initialvalue="1", parent=self)
@@ -3521,12 +3524,44 @@ class MacroApp(tk.Tk):
         self._append(Event(t=0, type="if", cond="image",
                            left=path, op=op, dx=0))
 
+    def _check_template_quality(self, path: str) -> bool:
+        """检查模板图是否够「有特征」
+
+        对比度太低的图（大片纯色、淡淡渐变）在屏幕上几乎处处相似，
+        回放时会点到不相干的位置——这是「图不对也点」的最常见原因，
+        所以在插入指令时就拦下来，而不是等回放时莫名点错。
+        """
+        try:
+            import numpy as np
+            from PIL import Image
+
+            with Image.open(path) as im0:
+                arr = np.asarray(im0.convert("L"), dtype=np.float32)
+        except Exception:
+            return True                      # 读不了就别拦，交给运行时判断
+        if arr.size == 0:
+            return True
+        std = float(arr.std())
+        if std >= 8.0:
+            return True
+        messagebox.showwarning(
+            "这张图不适合找图",
+            f"图片对比度只有 {std:.1f}（建议 8 以上）。\n\n"
+            "太淡、太平的图（大片纯色、淡淡渐变）在屏幕上几乎处处相似，\n"
+            "回放时容易点到不相干的位置。\n\n"
+            "请重新截图：只框住有明确边界的目标，不要带大片相同背景。",
+            parent=self)
+        return False
+
     def _cmd_find_image(self) -> None:
         path = filedialog.askopenfilename(
             title="选择要找的图片",
             filetypes=[("图片", "*.png *.jpg *.jpeg *.bmp"), ("所有文件", "*.*")])
         if not path:
             self._insert_index = None       # 用户取消
+            return
+        if not self._check_template_quality(path):
+            self._insert_index = None
             return
         conf = simpledialog.askinteger("找图相似度", "0-100（默认 90）：",
                                        initialvalue=90, minvalue=50, maxvalue=100,

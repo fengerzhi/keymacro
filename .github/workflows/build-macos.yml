@@ -77,10 +77,17 @@ jobs:
           echo "VERSION=$(tr -d '[:space:]' < version.txt)" >> "$GITHUB_OUTPUT"
 
       - name: 上传安装包
-        uses: actions/upload-artifact@v4
+        run: |
+          set -euo pipefail
+          VER="${{ steps.ver.outputs.VERSION }}"
+          # Release 附件用 ASCII 名，避免中文名被 GitHub 清洗成 "-1.7.2-macOS.dmg"
+          cp dist/*.dmg "dist/keymacro-${VER}-macos-arm64.dmg"
+          ls -lh dist/*.dmg
+
+      - uses: actions/upload-artifact@v4
         with:
           name: 按键精灵-${{ steps.ver.outputs.VERSION }}-macOS-arm64
-          path: dist/*.dmg
+          path: dist/keymacro-*.dmg
           if-no-files-found: error
           retention-days: 30
 
@@ -100,8 +107,8 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           mkdir -p dist-mac
-          cp "$GITHUB_WORKSPACE"/dist/*.dmg "dist-mac/按键精灵-${VER}-macOS.dmg"
-          git add -f "dist-mac/按键精灵-${VER}-macOS.dmg"
+          cp "$GITHUB_WORKSPACE/dist/keymacro-${VER}-macos-arm64.dmg" "dist-mac/"
+          git add -f "dist-mac/keymacro-${VER}-macos-arm64.dmg"
           git commit -q -m "macOS 安装包 v${VER}（arm64）"
           git push -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:release-assets
           ls -lh dist-mac

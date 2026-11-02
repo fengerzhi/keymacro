@@ -116,12 +116,58 @@ def _ncc_full(img: np.ndarray, tmpl: np.ndarray) -> tuple[float, int, int] | Non
     std_t = np.sqrt(var_t / n)
     score[std_w < max(0.8, 0.15 * std_t)] = -1.0
 
-    idx = int(np.argmax(score))
-    best = float(score.reshape(-1)[idx])
-    y, x = divmod(idx, score.shape[1])
-    if best < -0.5:
+    # 取分数最高的几个候选逐个复核：NCC 对整体亮度/对比度的线性变化免疫，
+    # 只靠它会「图明显不一样也算命中」，所以还要核亮度与对比度。
+    flat = score.reshape(-1)
+    k = min(8, flat.size)
+    top = np.argpartition(flat, -k)[-k:]
+    top = top[np.argsort(flat[top])[::-1]]
+    passed: list[tuple[float, int, int]] = []
+    for i in top:
+        s = float(flat[int(i)])
+        if s < -0.5:                 # 被平坦区域过滤掉的
+            continue
+        y, x = divmod(int(i), score.shape[1])
+        if _brightness_ok(img[y:y + h, x:x + w], tmpl):
+            passed.append((min(s, 1.0), x, y))
+        if len(passed) >= 3:
+            break
+    if not passed:
         return None
-    return min(best, 1.0), x, y
+
+    best_s, bx, by = passed[0]
+    # 唯一性：别处还有分数几乎一样的候选 → 模板区分度不够（任务栏里几个图标长得很像），
+    # 这时不管点哪一个都可能点错，宁可判为不可信，把分数压到阈值以下。
+    for s, x, y in passed[1:]:
+        far = abs(x - bx) >= w * 0.5 or abs(y - by) >= h * 0.5
+        if far and s >= best_s - 0.03:
+            best_s -= 0.12
+            break
+    return max(best_s, 0.0), bx, by
+
+
+def _brightness_ok(win: np.ndarray, tmpl: np.ndarray,
+                   mean_tol: float = 32.0,
+                   std_ratio: tuple[float, float] = (0.65, 1.55),
+                   mae_tol: float = 18.0) -> bool:
+    """像素级复核（NCC 之外的二次确认）。
+
+    NCC 只比较「去均值后的形状」，两个后果实测都能复现：
+      1) 图整体加亮 40 灰度，NCC 仍是 0.9999999；
+      2) 屏幕上「结构相似但内容不同」的两块（实测相关系数 0.95、平均差 22），
+         NCC 会给 0.99，于是点到了不相干的地方。
+    所以命中后还要核亮度、对比度，以及逐像素平均绝对差（MAE）。
+    """
+    if abs(float(win.mean()) - float(tmpl.mean())) > mean_tol:
+        return False
+    st = float(tmpl.std())
+    if st > 2.0:                      # 模板本身太平淡时，比例判断不可靠，跳过
+        r = float(win.std()) / st
+        if not (std_ratio[0] <= r <= std_ratio[1]):
+            return False
+    if float(np.abs(win - tmpl).mean()) > mae_tol:
+        return False
+    return True
 
 
 def _ncc_local(img: np.ndarray, tmpl: np.ndarray,
@@ -133,6 +179,8 @@ def _ncc_local(img: np.ndarray, tmpl: np.ndarray,
     var_t = float((t * t).sum())
     if var_t <= 1e-9:
         return None
+    n = h * w
+    min_std = max(0.8, 0.15 * float(np.sqrt(var_t / n)))
     x0, x1 = max(0, cx - radius), min(W - w, cx + radius)
     y0, y1 = max(0, cy - radius), min(H - h, cy + radius)
     if x1 < x0 or y1 < y0:
@@ -144,6 +192,11 @@ def _ncc_local(img: np.ndarray, tmpl: np.ndarray,
             a = win - win.mean()
             var_a = float((a * a).sum())
             if var_a <= 1e-9:
+                continue
+            # 纯色窗口的 NCC 分母趋近 0，分数会虚高，必须跳过
+            if float(np.sqrt(var_a / n)) < min_std:
+                continue
+            if not _brightness_ok(win, tmpl):
                 continue
             s = float((a * t).sum()) / (float(np.sqrt(var_a * var_t)) + 1e-9)
             if best is None or s > best[0]:
@@ -162,8 +215,10 @@ def match_gray(img: np.ndarray, tmpl: np.ndarray) -> tuple[float, int, int] | No
     if h > H or w > W or h < 2 or w < 2:
         return None
 
-    # 纯色模板没有可匹配特征，直接判定失败（这种图截了也用不了）
-    if float(tmpl.std()) < 1.0:
+    # 对比度太低的模板（大片纯色、淡淡渐变）没有可区分特征：
+    # 屏幕上随便一块背景都能跟它「很像」，这正是「图不对也点」的主因，
+    # 所以直接判失败，让用户截一张有明确边界的图。
+    if float(tmpl.std()) < 8.0:
         return None
 
     if H * W > 1_200_000 and h >= 16 and w >= 16 and h < H // 2 and w < W // 2:
@@ -171,10 +226,12 @@ def match_gray(img: np.ndarray, tmpl: np.ndarray) -> tuple[float, int, int] | No
         if small is None:
             return None
         s, cx, cy = small
+        if s < 0.55:                 # 粗搜都不像，精修也救不回来
+            return None
         refined = _ncc_local(img, tmpl, cx * 2, cy * 2, radius=6)
-        if refined and refined[0] >= s - 0.02:
-            return refined
-        return s, cx * 2, cy * 2
+        # 降采样分数不可信（丢了一半像素细节，容易虚高），
+        # 精修拿不到可信结果就直接判未命中，不能退回粗搜分数。
+        return refined
     return _ncc_full(img, tmpl)
 
 
