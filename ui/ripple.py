@@ -156,6 +156,10 @@ class RippleFeedback:
         self._shape_ok = False
         self._last_pos = (0, 0)
 
+    def available(self) -> bool:
+        """这台机器上能不能显示涟漪（macOS / 键控不可用时为 False）"""
+        return self._mode != "off"
+
     # ============================================================ 小窗（共用）
     def _ensure_win(self) -> None:
         if self._win is not None:

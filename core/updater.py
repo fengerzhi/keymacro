@@ -39,14 +39,15 @@ import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 
-APP_VERSION = "1.7.3"
+APP_VERSION = "1.8.0"
 
 # 当前版本的更新说明：生成升级包时写入 notes.txt，升级窗口会自动显示
-RELEASE_NOTES = """v1.7.3
-- 修复「图不对也点」：新增像素级复核（亮度、对比度、平均像素差），形状相似但内容不同的目标不再误判
-- 修复降采样粗搜的高分被直接当成结果的问题（粗搜分数不可信，一律以原图精修为准）
-- 对比度过低的图片（大片纯色/淡渐变）在选图时就提示拒绝，这类图在屏幕上处处相似
-- 屏幕上存在多处几乎相同的内容时，判定为不可信、不点击，避免点错位置"""
+RELEASE_NOTES = """v1.8.0
+- 找图点击改为「直接框选」：在屏幕上拖一个框，松手就自动截图存模板并添加指令，不再弹「选文件 / 输相似度 / 手填 x,y,宽,高」三个窗；模板统一存在 ~/.macro-sprite/images/
+- 图片条件（如果）：直接从脚本用过的图里挑，右侧大图预览，也能现场框选；编辑条件时终于可以换图
+- 图片预览窗口加大到 420×300 并可拉伸，大图自动缩小、小图按整数倍放大（以前预览只有一条缝）
+- 事件列表支持按住行上下拖动调整顺序，目标行高亮提示，Ctrl+Z 可撤销；顺带修好工具栏 ↑↓ 与右键「上移/下移」一直无效的问题
+- 升级脚本：修正「结束旧进程后计数校正」语句放错位置的问题"""
 
 
 
@@ -456,6 +457,7 @@ class UpdatePlan:
     proc: str = ""         # 升级前要结束的进程名
     ps_command: str = ""   # PowerShell -EncodedCommand（Base64/UTF-16，主路径）
     pid: int = 0           # 当前进程号（升级前精确结束自己）
+    mark: str = ""         # 升级脚本「已开始执行」的标记文件（确认脚本真的跑起来了）
     log: str = ""          # 升级日志路径
     target: str = ""       # 目标版本号
     hint: str = ""         # 形态不匹配等提醒（空 = 没问题）
@@ -467,7 +469,8 @@ def _ps_quote(s: str) -> str:
 
 
 def build_ps_command(staging: Path, install: Path, launch: str, proc: str,
-                     pid: int = 0, log_file: str = "") -> str:
+                     pid: int = 0, log_file: str = "",
+                     mark_file: str = "") -> str:
     """生成升级用 PowerShell 脚本并转成 -EncodedCommand 需要的 Base64。
 
     为什么不继续用 .bat：cmd 的代码页（chcp）与文件编码只要不一致，
@@ -489,8 +492,19 @@ def build_ps_command(staging: Path, install: Path, launch: str, proc: str,
     if log_file:
         ps_log = (log_file[:-4] + ".ps.log" if log_file.lower().endswith(".log")
                   else log_file + ".ps.log")
+    # 升级后要核对的文件：源码版看 .py，打包版看 exe
+    verify = ["core/updater.py", "main.py"]
+    if proc:
+        verify.append(proc if proc.lower().endswith(".exe") else proc + ".exe")
+
     lines = [
         "$ErrorActionPreference = 'Continue'",
+        # 第一件事：写标记文件。Python 侧据此确认脚本**真的开始执行**了。
+        # Popen 成功 ≠ 脚本跑起来：DETACHED_PROCESS 下 PowerShell 会立刻退出，
+        # 一行都不执行（实测），升级于是「看起来交接成功、实际什么都没换」。
+        f"$mark = {_ps_quote(mark_file or '')}",
+        "if ($mark) { try { Set-Content -LiteralPath $mark -Value $PID"
+        " -Encoding ASCII } catch { } }",
         f"$log = {_ps_quote(log_file or '')}",
         f"$pslog = {_ps_quote(ps_log)}",
         "if ($pslog) {",
@@ -510,11 +524,24 @@ def build_ps_command(staging: Path, install: Path, launch: str, proc: str,
         "  } catch { }",
         "}",
         f"$pname = {_ps_quote(pname)}",
+        "$left = -1",
         "if ($pname) {",
         "  try { Get-Process -Name $pname -ErrorAction SilentlyContinue |"
         " Stop-Process -Force -ErrorAction SilentlyContinue } catch { }",
+        # 必须等进程真的消失再覆盖：exe 还被占着时 robocopy 一定失败，
+        # 表现就是「升级包对了、日志说交接成功，但 exe 没换掉」
+        "  for ($w = 0; $w -lt 40; $w++) {",
+        "    $left = @(Get-Process -Name $pname"
+        " -ErrorAction SilentlyContinue).Count",
+        "    if ($left -le 0) { break }",
+        "    if ($w -eq 12) {",
+        "      Get-Process -Name $pname -ErrorAction SilentlyContinue |"
+        " Stop-Process -Force -ErrorAction SilentlyContinue",
+        "    }",
+        "    Start-Sleep -Milliseconds 500",
+        "  }",
         "}",
-        "Start-Sleep -Seconds 1",
+        "if ($left -lt 0) { $left = 0 }",
         f"$src = {_ps_quote(str(staging))}",
         f"$dst = {_ps_quote(str(install))}",
         "if (-not (Test-Path -LiteralPath $dst)) {"
@@ -537,7 +564,7 @@ def build_ps_command(staging: Path, install: Path, launch: str, proc: str,
         "}",
         # ---- 核对：关键文件必须真的换了 ----
         "$bad = @()",
-        "foreach ($rel in @('core/updater.py','main.py')) {",
+        f"foreach ($rel in @({', '.join(_ps_quote(v) for v in verify)})) {{",
         "  $s = Join-Path $src $rel",
         "  $d = Join-Path $dst $rel",
         "  if ((Test-Path -LiteralPath $s) -and (Test-Path -LiteralPath $d)) {",
@@ -570,6 +597,7 @@ def build_ps_command(staging: Path, install: Path, launch: str, proc: str,
         "    \"src=$src\",",
         "    \"dst=$dst\",",
         "    \"robocopy=$code\",",
+        "    \"running=$left\",",
         "    \"restarted=$done\",",
         "    \"error=$err\",",
         "    \"log=$log\",",
@@ -579,13 +607,17 @@ def build_ps_command(staging: Path, install: Path, launch: str, proc: str,
         "} catch { }",
         "$msg = ''",
         "if (-not $ok) {",
-        "  $msg = \"升级文件没有替换成功。`n`n原因：$err`n`n请手动把升级包里的文件"
+        "  $extra = ''",
+        "  if ($left -gt 0) { $extra = \"`n`n注意：还有 $left 个「$pname」进程没退出，"
+        "先把它们全部关掉，再点一次升级。\" }",
+        "  $msg = \"升级文件没有替换成功。`n`n原因：$err$extra`n`n请手动把升级包里的文件"
         "复制到：`n$dst`n`n详细日志：`n$log\" + \"`n$pslog\"",
         "} elseif (-not $done) {",
         "  $msg = \"升级文件已复制完成，但没能自动启动。`n`n请手动打开：$dst\"",
         "}",
         "if ($msg) {",
-        "  try { (New-Object -ComObject WScript.Shell).Popup($msg, 0,"
+        # 90 秒自动消失：0 = 一直等用户点，会留下僵尸 PowerShell 占着日志文件
+        "  try { (New-Object -ComObject WScript.Shell).Popup($msg, 90,"
         " '按键精灵 · 升级', 48) | Out-Null } catch { }",
         "}",
         "if ($pslog) { try { Stop-Transcript | Out-Null } catch { } }",
@@ -639,8 +671,8 @@ def extract_package(zip_path: str | Path, staging_dir: str | None = None) -> Pat
         for info in infos:
             name = _entry_name(info)
             target = (staging / name).resolve()
-            # 防路径穿越
-            if not (str(target) == str(root) or str(target).startswith(str(root) + os.sep)):
+            # 防路径穿越：用 Path 的语义判断，不依赖 os.sep
+            if target != root and not target.is_relative_to(root):
                 raise ValueError(f"zip 内含非法路径：{name}")
             plan.append((info, staging / name))
         for info, target in plan:
@@ -733,13 +765,61 @@ def plan_update(zip_path: str | Path, target_version: str = "") -> UpdatePlan:
             bat.write_bytes(("\r\n".join(lines) + "\r\n").encode("gbk"))
         except Exception:
             bat.write_text("\r\n".join(lines), encoding="utf-8")
+    # 升级脚本写下的「我已经开始执行」标记（每次升级一个独立文件）
+    mark = str(Path(tempfile.gettempdir()) /
+               f"keymacro_apply_{os.getpid()}_{int(time.time())}.mark")
     ps_command = build_ps_command(staging, install, launch, proc,
-                                  os.getpid(), log) if os.name == "nt" else ""
+                                  os.getpid(), log, mark) if os.name == "nt" else ""
     upgrade_log(f"启动目标={launch or '(无)'} "
                 f"要结束的进程={proc or '(源码进程)'} pid={os.getpid()}")
     return UpdatePlan(staging=staging, install=install, restart_bat=bat,
                      launch=launch, proc=proc, ps_command=ps_command,
-                     pid=os.getpid(), log=log, target=ver, hint=hint)
+                     pid=os.getpid(), mark=mark, log=log,
+                     target=ver, hint=hint)
+
+
+def _start_ps(b64: str, cwd: str, mark: str) -> bool:
+    """启动 PowerShell 升级脚本，并确认它**真的开始执行**了
+
+    Popen 返回成功只代表进程创建成功。实测 DETACHED_PROCESS 下 PowerShell
+    会立刻退出、脚本一行都不执行 —— 升级于是「看起来交接成功、实际一个文件
+    都没换」。所以这里靠脚本自己写的标记文件来判断：写不出来就换下一种方式。
+    """
+    no_win = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    detached = getattr(subprocess, "DETACHED_PROCESS", 0)
+    for flags, name in ((no_win, "CREATE_NO_WINDOW"),
+                        (no_win | detached, "CREATE_NO_WINDOW+DETACHED"),
+                        (0, "默认")):
+        if mark:
+            try:
+                os.remove(mark)
+            except OSError:
+                pass
+        try:
+            subprocess.Popen(
+                ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
+                 "-EncodedCommand", b64],
+                cwd=cwd,
+                creationflags=flags,
+                # 句柄一律 DEVNULL：继承了失效的控制台句柄时 PowerShell 会直接跪
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except Exception as exc:                   # noqa: BLE001
+            upgrade_log(f"PowerShell 启动失败（{name}）：{exc}")
+            continue
+        if not mark:
+            upgrade_log(f"已启动 PowerShell 升级脚本（{name}）")
+            return True
+        for _ in range(30):                        # 最多等 3 秒
+            time.sleep(0.1)
+            if os.path.exists(mark):
+                upgrade_log(f"已启动 PowerShell 升级脚本（{name}，已确认执行）")
+                return True
+        upgrade_log(f"PowerShell 没真正跑起来（{name}），换下一种启动方式")
+    upgrade_log("PowerShell 各种启动方式都没成功，改用 bat 兜底")
+    return False
 
 
 def apply_update(plan: UpdatePlan) -> None:
@@ -758,24 +838,9 @@ def apply_update(plan: UpdatePlan) -> None:
         return
     # Windows：优先用 PowerShell 编码命令（不受代码页影响），
     # 失败才退回 bat（bat 已参数化，不再写中文路径）。
-    if plan.ps_command:
-        no_win = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-        detached = getattr(subprocess, "DETACHED_PROCESS", 0)
-        # 有的机器上 DETACHED_PROCESS 会被安全软件拦掉，逐个降级试
-        for flags, name in ((no_win | detached, "DETACHED_PROCESS"),
-                            (no_win, "CREATE_NO_WINDOW"),
-                            (0, "默认")):
-            try:
-                subprocess.Popen(
-                    ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
-                     "-EncodedCommand", plan.ps_command],
-                    cwd=str(plan.staging),
-                    creationflags=flags,
-                )
-                upgrade_log(f"已启动 PowerShell 升级脚本（交接成功，{name}）")
-                return
-            except Exception as exc:
-                upgrade_log(f"PowerShell 启动失败（{name}）：{exc}")
+    if plan.ps_command and _start_ps(plan.ps_command, str(plan.staging),
+                                     plan.mark):
+        return
     try:
         subprocess.Popen(
             ["cmd", "/c", "_apply_update.bat",
@@ -980,11 +1045,15 @@ def zip_version(zip_path: str | Path) -> str:
     try:
         with zipfile.ZipFile(zp) as zf:
             names = zf.namelist()
-            for name in ("version.txt", "VERSION", "./version.txt"):
-                if name in names:
-                    v = zf.read(name).decode("utf-8", "ignore").strip()
-                    if v:
-                        return v.splitlines()[0].strip()
+            # 版本文件：根目录优先，也容忍包里套了一层文件夹（发版 zip 常见）
+            cands = [n for n in names
+                     if n.replace("\\", "/").rsplit("/", 1)[-1].lower()
+                     in ("version.txt", "version")]
+            cands.sort(key=lambda n: n.count("/"))
+            if cands:
+                v = zf.read(cands[0]).decode("utf-8", "ignore").strip()
+                if v:
+                    return v.splitlines()[0].strip()
             # 包里自带的 version.json（「Windows打包」zip 里就有这一份）
             for name in names:
                 if name.replace("\\", "/").rsplit("/", 1)[-1] == "version.json":
@@ -1017,9 +1086,13 @@ def manifest_from_zip(zip_path: str | Path) -> dict:
     notes = ""
     try:
         with zipfile.ZipFile(zp) as zf:
-            for name in ("notes.txt", "更新说明.txt", "README.txt"):
-                if name in zf.namelist():
-                    notes = zf.read(name).decode("utf-8", "ignore").strip()
+            names = zf.namelist()
+            for want in ("notes.txt", "更新说明.txt", "readme.txt"):
+                cands = [n for n in names
+                         if n.replace("\\", "/").rsplit("/", 1)[-1].lower() == want]
+                cands.sort(key=lambda n: n.count("/"))     # 根目录优先
+                if cands:
+                    notes = zf.read(cands[0]).decode("utf-8", "ignore").strip()
                     break
     except Exception:
         pass

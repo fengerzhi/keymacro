@@ -34,7 +34,9 @@ from core.player import Player
 from core.recorder import Recorder
 from core.script_model import EDIT_ACTIONS, Event, Script
 from core.window import SYSTEM, capability_report, focus_window, get_active_window
+from ui.image_cond import GRAB_ITEM, ask_image_condition
 from ui.picker import pick_points
+from ui.region_grab import grab_region, images_dir
 
 APP_TITLE = "按键精灵 · 桌面版"
 HOTKEY_HINT = "F9 停止录制 · F8 暂停 · F10 中断回放"
@@ -47,6 +49,14 @@ HUD_ONLY_RECORD = True
 # 指令库定义：(分组, [(显示名, 工厂函数或指令标识, 说明)])
 def _mk(kind: str, **kw):
     return lambda: (kind, kw)
+
+
+def _rect_of(points: list[tuple[int, int]]) -> tuple[int, int, int, int]:
+    """取点前两个（左上、右下）→ 屏幕矩形 (x, y, 宽, 高)"""
+    xs = [p[0] for p in points[:2]]
+    ys = [p[1] for p in points[:2]]
+    x, y = min(xs), min(ys)
+    return x, y, max(1, max(xs) - x), max(1, max(ys) - y)
 
 
 class _EditKeyDialog(tk.Toplevel):
@@ -160,6 +170,9 @@ class MacroApp(tk.Tk):
                 0, self._ripple_at, x, y, b) if x is not None else None,
         )
         self.player = Player()
+        # 回放时也画涟漪：player 在回放线程里回调，切回主线程再画
+        self.player.on_action = lambda x, y, b: self.after(
+            0, self._ripple_play, x, y, b)
         self.script_path: str | None = None
         self.target_window: str | None = None
         self._last_row_count = 0
@@ -1012,32 +1025,23 @@ class MacroApp(tk.Tk):
             if note:
                 hint.configure(text=note)
             if ver and not updater.is_newer(ver, updater.APP_VERSION):
-                notes = (m.get("notes") or "").strip()
-                msg = f"已经是最新版本（v{updater.APP_VERSION}）。"
-                if m.get("package"):
-                    msg += f"\n\n来源里的包：{Path(str(m['package'])).name}"
-                if notes:
-                    msg += "\n\n最新说明：\n" + notes[:300]
-                finish(msg)
+                finish(f"已经是最新版本（v{updater.APP_VERSION}）。")
                 return
             if not ver:
-                # 包里读不出版本号：不谎报「已是最新」，问用户要不要强行装
-                if silent:
-                    finish()
-                    return
-                name = Path(str(m.get("package") or "")).name or "升级包"
-                if not messagebox.askyesno(
-                        "无法识别版本",
-                        f"升级包「{name}」里没有版本号，看不出是哪个版本。\n\n"
-                        f"当前程序是 v{updater.APP_VERSION}。\n"
-                        "仍然用它覆盖安装吗？\n\n"
-                        "（建议把 for_updater 升级包或整包放到升级文件夹；"
-                        "确定是新版再点「是」）", parent=self):
-                    finish()
-                    return
-                hint.configure(text="正在准备升级包（版本未知）…")
-            else:
-                hint.configure(text=f"发现新版本 v{ver}，正在准备…")
+                # 读不出版本号 → 没法判断新旧，按「已是最新」处理。
+                # 不能直接问「要不要强行覆盖」：装下去可能比现在更旧，
+                # 用户还以为是升级成功了。原因写进状态栏，弹窗只留一句话。
+                if not silent:
+                    name = Path(str(m.get("package") or "")).name or "升级包"
+                    try:
+                        self.status_var.set(
+                            f"升级源里的「{name}」没有版本号"
+                            f"（缺 version.txt / version.json），已忽略")
+                    except Exception:              # noqa: BLE001
+                        pass
+                finish(f"已经是最新版本（v{updater.APP_VERSION}）。")
+                return
+            hint.configure(text=f"发现新版本 v{ver}，正在准备…")
             threading.Thread(target=prepare, args=(m,), daemon=True).start()
 
         import threading
@@ -1192,7 +1196,7 @@ class MacroApp(tk.Tk):
             elif ver:
                 log(f"已是最新版本（来源里是 v{ver}）", "ok")
             else:
-                log("包里读不出版本号（仍可覆盖安装）", "dim")
+                log("已是最新版本（升级源里的包没有版本号，已忽略）", "ok")
             if m.get("note"):
                 log(f"! {m['note']}", "dim")
             if m.get("package"):
@@ -1506,13 +1510,23 @@ class MacroApp(tk.Tk):
         self.tree.bind("<Delete>", lambda e: self.delete_selected())
         self.tree.bind("<space>", lambda e: self.toggle_selected())
 
+        # 按住行上下拖动 → 调整执行顺序（与 ↑ / ↓ 按钮同一套落库逻辑）
+        self._drag_iid: str | None = None
+        self._drag_y0 = 0
+        self._drag_on = False
+        self._drop_row: str | None = None
+        self.tree.tag_configure("dropmark", background="#cfe8ff")
+        self.tree.bind("<ButtonPress-1>", self._on_tree_press)
+        self.tree.bind("<B1-Motion>", self._on_tree_drag)
+        self.tree.bind("<ButtonRelease-1>", self._on_tree_drop)
+
     _TAG_BY_TYPE = {
         "click": "mouse", "move": "mouse", "drag": "mouse",
         "keytype": "key", "edit": "key", "key": "key", "paste_text": "key",
         "loop_start": "flow", "loop_end": "flow", "break": "flow",
         "if": "cond", "else": "cond", "if_end": "cond",
         "delay": "wait", "wait": "wait",
-        "findimg": "findimg", "find_image": "findimg",
+        "findimg": "findimg", "find_image": "findimg", "ocr": "findimg",
         "comment": "note",
     }
 
@@ -1540,6 +1554,107 @@ class MacroApp(tk.Tk):
             self.tree.insert("", 0, iid=str(i), **kw)
         else:
             self.tree.insert("", "end", iid=str(i), **kw)
+
+    # ------------------------------------------------------------ 拖拽排序
+    def _on_tree_press(self, event: tk.Event) -> None:
+        """记下按下的行，等真的拖动了再进入拖拽状态
+
+        不返回 "break"：正常的单击选中、双击编辑还要靠后面的类绑定。
+        """
+        self._drag_iid = None
+        self._drag_on = False
+        self._drop_row = None
+        row = self.tree.identify_row(event.y)
+        if not row:
+            return
+        self._drag_iid = row
+        self._drag_y0 = event.y
+
+    def _on_tree_drag(self, event: tk.Event):
+        if not self._drag_iid:
+            return None
+        if not self._drag_on:
+            # 鼠标要移动几像素才算拖：否则双击、单击微抖都会被当成排序
+            if abs(event.y - self._drag_y0) < 6:
+                return None
+            self._drag_on = True
+            try:
+                self.tree.configure(cursor="hand2")
+            except tk.TclError:
+                pass
+        row = self.tree.identify_row(event.y)
+        if row != self._drop_row:           # 只在目标行变了才重画，长脚本也不卡
+            self._drop_row = row
+            self._mark_drop(row)
+        return "break"
+
+    def _on_tree_drop(self, event: tk.Event):
+        if not self._drag_on:
+            self._drag_iid = None
+            return None
+        self._drag_on = False
+        src_iid, self._drag_iid = self._drag_iid, None
+        self._drop_row = None
+        self._mark_drop(None)
+        try:
+            self.tree.configure(cursor="")
+        except tk.TclError:
+            pass
+        target = self.tree.identify_row(event.y)
+        if not src_iid or not target:
+            return "break"
+        try:
+            src, tgt = int(src_iid), int(target)
+        except ValueError:
+            return "break"
+        # 落在目标行的上半区 = 插到它前面，下半区 = 插到它后面
+        bbox = self.tree.bbox(target)
+        mid = (bbox[1] + bbox[3] // 2) if bbox else 0
+        dst = tgt + (1 if event.y > mid else 0)
+        if dst > src:
+            dst -= 1
+        self._move_event(src, dst)
+        return "break"
+
+    def _mark_drop(self, row: str | None) -> None:
+        """把「松手后会落在哪一行」标出来（不改动真实顺序，拖动中零成本）"""
+        for iid in self.tree.get_children():
+            raw = self.tree.item(iid, "tags")
+            if isinstance(raw, str):
+                tags = [t for t in raw.split() if t]
+            else:
+                tags = [str(t) for t in (raw or ())]
+            tags = [t for t in tags if t != "dropmark"]
+            if iid == row and iid != self._drag_iid:
+                tags.append("dropmark")
+            self.tree.item(iid, tags=tuple(tags))
+
+    def _move_event(self, src: int, dst: int) -> bool:
+        """把第 src 条挪到第 dst 位（执行顺序变了，节奏不变）
+
+        时间槽留在原地：拖动只回答「第几步做什么」，不该把整段脚本的
+        时间轴一起搅乱，否则每挪一行后面所有的 t 都得跟着改。
+        """
+        evs = self.script.events
+        n = len(evs)
+        if not (0 <= src < n):
+            return False
+        dst = max(0, min(dst, n - 1))
+        if dst == src:
+            return False
+        self._snapshot()
+        slots = [e.t for e in evs]
+        ev = evs.pop(src)
+        evs.insert(dst, ev)
+        for e, t in zip(evs, slots):
+            e.t = t
+        if self._folded:
+            self._folded.clear()            # 折叠位置按行号记的，重排后失效
+        self._refresh_list()
+        self.tree.selection_set(str(dst))
+        self.tree.see(str(dst))
+        self._set_status(f"已调整顺序：第 {src + 1} 行 → 第 {dst + 1} 行（Ctrl+Z 可撤销）")
+        return True
 
     def _command_defs(self) -> list[tuple[str, list[tuple[str, object]]]]:
         """指令库定义：面板按钮与右键「插入指令」菜单共用。
@@ -1579,6 +1694,7 @@ class MacroApp(tk.Tk):
                 ("否则", self._cmd_else),
                 ("结束判断", self._cmd_if_end),
                 ("找图点击", self._cmd_find_image),
+                ("验证码识别", self._cmd_ocr),
                 ("注释", self._cmd_comment),
             ]),
         ]
@@ -1657,6 +1773,12 @@ class MacroApp(tk.Tk):
                         variable=self.ripple_var,
                         command=self._apply_ripple_setting).grid(
             row=10, column=0, columnspan=2, sticky="w", pady=(6, 0))
+        # 回放时的点击涟漪：脚本跑起来能直接看到点在哪
+        self.play_ripple_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(box, text="回放时点击显示涟漪特效",
+                        variable=self.play_ripple_var,
+                        command=self._apply_ripple_setting).grid(
+            row=12, column=0, columnspan=2, sticky="w", pady=(2, 0))
         # 涟漪模式：自动（键控）在个别显卡/缩放环境下可能不显示，提供闪烁兼容
         self.ripple_mode_var = tk.StringVar(value="自动（键控镂空）")
         cb = ttk.Combobox(box, textvariable=self.ripple_mode_var, width=17,
@@ -1765,7 +1887,10 @@ class MacroApp(tk.Tk):
 
     def _apply_ripple_setting(self) -> None:
         try:
-            self.ripple.enabled = bool(self.ripple_var.get())
+            # enabled 只表示「这台机器能显示涟漪」；录制、回放各用自己的开关
+            play = getattr(self, "play_ripple_var", None)
+            on = bool(self.ripple_var.get()) or (play is None or bool(play.get()))
+            self.ripple.enabled = self.ripple.available() and on
             if hasattr(self, "ripple_mode_var"):
                 flash = "兼容" in self.ripple_mode_var.get()
                 self.ripple.set_mode("flash" if flash else None)
@@ -1975,7 +2100,18 @@ class MacroApp(tk.Tk):
         """在屏幕坐标画涟漪（录制中由 on_press 回调触发）"""
         if not self.recorder.running or self.recorder.paused:
             return
+        if not bool(self.ripple_var.get()):
+            return
         try:
+            self.ripple.show(x, y, button or "left")
+        except Exception:
+            pass
+
+    def _ripple_play(self, x: int, y: int, button: str = "left") -> None:
+        """回放时的涟漪（player.on_action → 主线程）"""
+        try:
+            if not bool(self.play_ripple_var.get()) or not self.ripple.enabled:
+                return
             self.ripple.show(x, y, button or "left")
         except Exception:
             pass
@@ -2465,15 +2601,7 @@ class MacroApp(tk.Tk):
         idx = self._selected_index()
         if idx is None:
             return
-        j = idx + delta
-        if not (0 <= j < len(self.script.events)):
-            return
-        self._snapshot()
-        evs = self.script.events
-        evs[idx], evs[j] = evs[j], evs[idx]
-        evs.sort(key=lambda e: e.t)
-        self._refresh_list()
-        self.tree.selection_set(str(evs.index(evs[j])))
+        self._move_event(idx, idx + delta)
 
     def toggle_selected(self) -> None:
         idxs = self._selected_indices()
@@ -2751,7 +2879,27 @@ class MacroApp(tk.Tk):
                 initialvalue=str(ev.dx or 90), parent=self)
             if val and val.strip().isdigit():
                 ev.dx = max(50, min(100, int(val.strip())))
-                self._refresh_list()
+            region, ok = self._ask_find_region(ev.region())
+            if ok:
+                ev.set_region(region)
+            self._refresh_list()
+
+        elif ev.type == "ocr":
+            if messagebox.askyesno(
+                    "编辑验证码识别",
+                    "要重新框选验证码区域吗？\n\n"
+                    "选「是」：重新取点（2 点框区域，可选第 3 点点输入框）\n"
+                    "选「否」：只改 OCR 服务地址", parent=self):
+                self._pick_for_existing(ev)
+                return
+            ep = simpledialog.askstring(
+                "OCR 服务地址",
+                "留空 = 默认 127.0.0.1:1224\n"
+                "也可以只填 127.0.0.1:端口",
+                initialvalue=ev.text or "", parent=self)
+            if ep is not None:
+                ev.text = ep.strip()
+            self._refresh_list()
         else:
             messagebox.showinfo("提示",
                                 f"{ev.detail()}\n\n该类型暂无专门编辑器，"
@@ -2761,19 +2909,26 @@ class MacroApp(tk.Tk):
     def _edit_if_event(self, ev: Event) -> None:
         """编辑「如果」条件（图像 / 变量）"""
         if (ev.cond or "var") == "image":
-            cur = "2" if ev.op == "img_miss" else "1"
-            mode = simpledialog.askstring(
-                "编辑图片条件", "1 = 屏幕上有这张图\n2 = 屏幕上没有这张图",
-                initialvalue=cur, parent=self)
-            if mode is None:
+            res = ask_image_condition(
+                self, self._known_images(), current=ev.left or "",
+                hit=(ev.op != "img_miss"))
+            if res is None:
                 return
-            ev.op = "img_miss" if mode.strip() == "2" else "img_hit"
-            path = filedialog.askopenfilename(
-                title="重新选择图片（取消则保留原图）",
-                filetypes=[("图片", "*.png *.jpg *.jpeg *.bmp")])
-            if path:
-                ev.left = path
+            path, hit = res
+            ev.op = "img_hit" if hit else "img_miss"
+            if path == GRAB_ITEM:
+                def build(rect, p):
+                    ev.left = p
+                    self._refresh_list()
+                    self._set_status(f"已更新：{ev.detail()}")
+                    return None
+
+                self._grab_and_fill(build)
+                self._refresh_list()
+                return
+            ev.left = path
             self._refresh_list()
+            self._set_status(f"已更新：{ev.detail()}{self._quality_note(path)}")
             return
 
         left = simpledialog.askstring("编辑条件", "左边：",
@@ -3389,6 +3544,47 @@ class MacroApp(tk.Tk):
         else:
             self._insert_index = None
 
+    # ------------------------------------------------------------ 框选截图
+    def _grab_and_fill(self, builder) -> None:
+        """框选屏幕 → 自动截图存模板 → builder(rect, path) 构造事件插入
+
+        builder(rect, path) -> Event | None
+        """
+        self.iconify()                 # 先收起自己，避免挡住目标
+        self.after(220, lambda: self._open_grabber(builder))
+
+    def _open_grabber(self, builder) -> None:
+        def on_done(rect, path, err):
+            self.after(0, self._after_grab, rect, path, err, builder)
+
+        try:
+            grab_region(self, on_done=on_done)
+        except Exception as exc:                       # noqa: BLE001
+            self.deiconify()
+            messagebox.showerror("框选失败", str(exc), parent=self)
+
+    def _after_grab(self, rect, path, err, builder) -> None:
+        self.deiconify()
+        self.lift()
+        if err:
+            self._insert_index = None
+            messagebox.showerror("框选截图失败",
+                                 f"{err}\n\n（目标图没保存，指令没有添加）",
+                                 parent=self)
+            return
+        if not rect:
+            self._insert_index = None        # 取消框选
+            self._set_status("已取消框选")
+            return
+        ev = builder(rect, path)
+        if ev is None:
+            self._insert_index = None
+            return
+        self._append(ev)
+        # 模板太淡的话回放几乎必然点错。以前用弹窗拦，这里不打扰，
+        # 只在状态栏提醒一句——框选流程要的就是快。
+        self._set_status(f"已插入：{ev.detail()}{self._quality_note(path)}")
+
     def _cmd_click_left(self) -> None:
         self._pick_and_fill(1, lambda p: Event(
             t=0, type="click", x=p[0][0], y=p[0][1], button="left"))
@@ -3504,69 +3700,170 @@ class MacroApp(tk.Tk):
         self._append(Event(t=0, type="if", cond="var",
                            left=left.strip(), op=op, right=v.strip()))
 
-    def _cmd_if_image(self) -> None:
-        path = filedialog.askopenfilename(
-            title="选择要判断的图片",
-            filetypes=[("图片", "*.png *.jpg *.jpeg *.bmp"), ("所有文件", "*.*")])
-        if not path:
-            self._insert_index = None
-            return
-        if not self._check_template_quality(path):
-            self._insert_index = None
-            return
-        mode = simpledialog.askstring(
-            "图片条件", "1 = 屏幕上有这张图\n2 = 屏幕上没有这张图",
-            initialvalue="1", parent=self)
-        if mode is None:
-            self._insert_index = None
-            return
-        op = "img_miss" if mode.strip() == "2" else "img_hit"
-        self._append(Event(t=0, type="if", cond="image",
-                           left=path, op=op, dx=0))
+    def _known_images(self) -> list[str]:
+        """可以作为条件判断的候选图
 
-    def _check_template_quality(self, path: str) -> bool:
-        """检查模板图是否够「有特征」
-
-        对比度太低的图（大片纯色、淡淡渐变）在屏幕上几乎处处相似，
-        回放时会点到不相干的位置——这是「图不对也点」的最常见原因，
-        所以在插入指令时就拦下来，而不是等回放时莫名点错。
+        顺序即优先级：脚本里**最近用过**的排最前 —— 刚框完的那张找图模板
+        就躺在事件列表末尾，一眼就能选中，不用再去文件夹里认文件名。
         """
+        exts = (".png", ".jpg", ".jpeg", ".bmp")
+
+        def usable(p) -> bool:
+            return bool(p) and str(p).lower().endswith(exts)
+
+        seen: dict[str, None] = {}
+        for ev in reversed(self.script.events):
+            if ev.type in ("find_image", "if_image"):
+                if usable(ev.text):
+                    seen.setdefault(str(ev.text), None)
+            elif ev.type == "if" and (ev.cond or "") == "image":
+                if usable(ev.left):
+                    seen.setdefault(str(ev.left), None)
+        try:
+            files = sorted(images_dir().glob("*.png"),
+                           key=lambda p: p.stat().st_mtime, reverse=True)
+            for p in files[:15]:
+                seen.setdefault(str(p), None)
+        except Exception:                   # noqa: BLE001
+            pass
+        return list(seen)
+
+    def _cmd_if_image(self) -> None:
+        """图片条件：从用过的图里挑（或现场框选），不必再翻文件对话框"""
+        res = ask_image_condition(self, self._known_images(), hit=True)
+        if res is None:
+            self._insert_index = None       # 用户取消
+            return
+        path, hit = res
+        op = "img_hit" if hit else "img_miss"
+        if path == GRAB_ITEM:
+            def build(rect, p):
+                return Event(t=0, type="if", cond="image", left=p, op=op, dx=0)
+
+            self._grab_and_fill(build)
+            return
+        ev = Event(t=0, type="if", cond="image", left=path, op=op, dx=0)
+        self._append(ev)
+        self._set_status(f"已插入：{ev.detail()}{self._quality_note(path)}")
+
+    def _template_std(self, path: str) -> float | None:
+        """模板图的灰度标准差（越小越「平」）；读不出来返回 None"""
         try:
             import numpy as np
             from PIL import Image
 
             with Image.open(path) as im0:
                 arr = np.asarray(im0.convert("L"), dtype=np.float32)
-        except Exception:
-            return True                      # 读不了就别拦，交给运行时判断
+        except Exception:                      # noqa: BLE001
+            return None                        # 读不了就别拦，交给运行时判断
         if arr.size == 0:
-            return True
-        std = float(arr.std())
-        if std >= 8.0:
-            return True
-        messagebox.showwarning(
-            "这张图不适合找图",
-            f"图片对比度只有 {std:.1f}（建议 8 以上）。\n\n"
-            "太淡、太平的图（大片纯色、淡淡渐变）在屏幕上几乎处处相似，\n"
-            "回放时容易点到不相干的位置。\n\n"
-            "请重新截图：只框住有明确边界的目标，不要带大片相同背景。",
-            parent=self)
-        return False
+            return None
+        return float(arr.std())
+
+    def _quality_note(self, path: str) -> str:
+        """模板太淡时的提醒后缀（只挂状态栏，不弹窗打断）"""
+        std = self._template_std(path)
+        if std is None or std >= 8.0:
+            return ""
+        return (f"　·　提示：这张图对比度偏低（{std:.1f}），在屏幕上几乎处处相似，"
+                f"回放容易点错，建议重框一个边界清楚的目标")
 
     def _cmd_find_image(self) -> None:
-        path = filedialog.askopenfilename(
-            title="选择要找的图片",
-            filetypes=[("图片", "*.png *.jpg *.jpeg *.bmp"), ("所有文件", "*.*")])
-        if not path:
-            self._insert_index = None       # 用户取消
-            return
-        if not self._check_template_quality(path):
+        """找图点击：直接在屏幕上框选目标 → 自动截图存模板 → 自动添加
+
+        之前是「选文件 + 输入相似度 + 手填 x,y,宽,高」三个弹窗，工具本该
+        自己干的事全推给用户了（先自己截图、再记坐标）。现在只做一件事：
+        拖一个框，松手就是一条找图指令。
+        """
+        def build(rect, path):
+            ev = Event(t=0, type="find_image", text=path, dx=90)
+            # 默认全屏找：框选只是为了取模板，不是限定搜索范围。
+            # 想只在某块区域找，右键「编辑事件」里改区域即可。
+            ev.set_region(None)
+            return ev
+
+        self._grab_and_fill(build)
+
+    def _cmd_ocr(self) -> None:
+        """验证码识别：框选验证码 →（可选）点输入框 → 插入指令"""
+        from core import ocr as ocr_mod
+
+        if not ocr_mod.available():
+            if not messagebox.askyesno(
+                    "没连上 OCR 服务",
+                    "没连上本机 Umi-OCR（127.0.0.1:1224）。\n\n"
+                    "请先启动 Umi-OCR，并在「设置 → HTTP 服务」里打开服务；\n"
+                    "端口不一样的话，插入后右键「编辑事件」可以改服务地址。\n\n"
+                    "仍然插入这条指令吗？（回放时会再次尝试连接）", parent=self):
+                self._insert_index = None
+                return
+
+        if not messagebox.askokcancel(
+                "选择验证码区域",
+                "接下来框选验证码图片：\n\n"
+                "  第 1 点：验证码左上角\n"
+                "  第 2 点：验证码右下角\n"
+                "  第 3 点（可跳过）：点一下要填写的输入框\n\n"
+                "只想输入到当前光标位置？取完 2 点按 Enter 结束。", parent=self):
             self._insert_index = None
             return
-        conf = simpledialog.askinteger("找图相似度", "0-100（默认 90）：",
-                                       initialvalue=90, minvalue=50, maxvalue=100,
-                                       parent=self)
-        self._append(Event(t=0, type="find_image", text=path, dx=conf or 90))
+
+        def build(pts):
+            if len(pts) < 2:
+                return None
+            ev = Event(t=0, type="ocr", text="")
+            ev.set_region(_rect_of(pts))
+            if len(pts) >= 3:
+                ev.x, ev.y = pts[2][0], pts[2][1]
+            return ev
+
+        self._pick_and_fill(3, build)
+
+    def _pick_for_existing(self, ev: Event) -> None:
+        """给已有事件重新框选区域（验证码识别编辑用）"""
+        def build(pts):
+            if len(pts) >= 2:
+                ev.set_region(_rect_of(pts))
+                if len(pts) >= 3:
+                    ev.x, ev.y = pts[2][0], pts[2][1]
+                else:
+                    ev.x = ev.y = None
+                self._refresh_list()
+                self._set_status(f"已更新：{ev.detail()}")
+            return None
+
+        self._pick_and_fill(3, build)
+
+    def _ask_find_region(self, cur=None):
+        """询问找图搜索区域 → (region 或 None, 是否确认)
+
+        region=(x, y, 宽, 高)，None 表示全屏；第二个返回 False 表示用户取消。
+        """
+        init = f"{cur[0]},{cur[1]},{cur[2]},{cur[3]}" if cur else ""
+        text = simpledialog.askstring(
+            "找图搜索区域（可留空）",
+            "留空 = 全屏找。程序会自动判断哪处是任务栏图标、哪处是\n"
+            "桌面图标，优先点任务栏里的那个。\n\n"
+            "也可以只在这个矩形里找，格式：x,y,宽,高（物理像素）\n"
+            "例：整条任务栏 → 0,1500,2560,100\n"
+            "限定区域后，区域外的同款图标直接不参与匹配。",
+            initialvalue=init, parent=self)
+        if text is None:
+            return None, False
+        text = text.strip().replace("，", ",").replace(" ", "")
+        if not text:
+            return None, True               # 留空 = 全屏
+        try:
+            vals = [int(float(p)) for p in text.split(",") if p]
+        except ValueError:
+            vals = []
+        if len(vals) != 4 or vals[2] <= 0 or vals[3] <= 0:
+            messagebox.showwarning(
+                "格式不对",
+                "请按 x,y,宽,高 填 4 个数字，例如：0,1500,2560,100\n"
+                "宽和高都必须大于 0。", parent=self)
+            return None, False
+        return tuple(vals), True
 
     def _cmd_comment(self) -> None:
         text = simpledialog.askstring("注释", "注释内容：", parent=self)

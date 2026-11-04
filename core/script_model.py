@@ -44,6 +44,10 @@
     comment     注释（不执行）      text
 图像识别
     find_image  找图并点击          text=图片路径, dx=相似度(0-100), note=找不到时行为
+                rx/ry/rw/rh=只在这个矩形里找（可省略 = 全屏）
+    ocr         识别验证码并填写     rx/ry/rw/rh=验证码图的屏幕区域（必填）
+                                   x/y=输入框位置（可空：输入到当前焦点）
+                                   text=OCR 服务地址（空 = 127.0.0.1:1224）
 """
 
 from __future__ import annotations
@@ -106,6 +110,27 @@ class Event:
     note: str | None = None
     valid: bool | None = None
     enabled: bool = True                # 可临时禁用某步（不执行）
+    # 找图搜索区域（物理像素，左上角 + 宽高）；None = 全屏
+    rx: int | None = None
+    ry: int | None = None
+    rw: int | None = None
+    rh: int | None = None
+
+    def region(self) -> tuple[int, int, int, int] | None:
+        """找图区域 (x, y, 宽, 高)；四项不齐/宽高非正 → None（按全屏）"""
+        if None in (self.rx, self.ry, self.rw, self.rh):
+            return None
+        w, h = int(self.rw or 0), int(self.rh or 0)
+        if w <= 0 or h <= 0:
+            return None
+        return int(self.rx or 0), int(self.ry or 0), w, h
+
+    def set_region(self, region: tuple[int, int, int, int] | None) -> None:
+        """设置/清除找图区域"""
+        if region is None:
+            self.rx = self.ry = self.rw = self.rh = None
+            return
+        self.rx, self.ry, self.rw, self.rh = (int(v) for v in region)
 
     def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
@@ -196,7 +221,22 @@ class Event:
             return f"? 如果屏幕有 [{name}] 则继续"
         if ty == "find_image":
             name = (self.text or "").rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
-            return f"{prefix}找图点击 [{name}] 相似度{self.dx or 90}%"
+            text = f"{prefix}找图点击 [{name}] 相似度{self.dx or 90}%"
+            r = self.region()
+            if r:
+                text += f" 区域({r[0]},{r[1]},{r[2]}×{r[3]})"
+            return text
+
+        if ty == "ocr":
+            r = self.region()
+            text = f"{prefix}验证码识别"
+            if r:
+                text += f" 区域({r[0]},{r[1]},{r[2]}×{r[3]})"
+            if self.x is not None and self.y is not None:
+                text += f" → 填入({self.x},{self.y})"
+            else:
+                text += " → 输入到当前焦点"
+            return text
         if ty == "comment":
             return f"# {(self.text or '')[:30]}"
         return ty

@@ -25,7 +25,7 @@ from typing import Any, Callable
 
 from pynput import keyboard, mouse
 
-from . import image_match
+from . import image_match, ocr
 from .logger import capture_screen
 from .script_model import EDIT_ACTIONS, MAC_EDIT_MAP, Event, Script
 
@@ -95,6 +95,12 @@ class Player:
         self.running = False
         # 最近一次失败信息（供日志/截图使用）
         self.last_failure: tuple[str, str] | None = None
+        self.last_image_reason: str = ""      # 找图失败/特殊处理的具体原因
+        self.last_image_pos: tuple[int, int] | None = None   # 最近一次找图落点
+        self.last_ocr_text: str = ""          # 最近一次识别出的验证码
+        self.last_ocr_reason: str = ""        # 识别失败的具体原因
+        # 点击通知：回放时给界面画涟漪用，签名 (x, y, button)
+        self.on_action: Callable[[int, int, str], None] | None = None
         self.last_shot: str | None = None
         # 最近一次失败对应的事件对象与 1 起步骤号（供界面定位高亮）
         self.last_fail_event: Event | None = None
@@ -132,6 +138,8 @@ class Player:
         try:
             r = self._dispatch(ev, script)
             if r is False:
+                if ev.type == "ocr" and self.last_ocr_reason:
+                    return f"识别失败：{self.last_ocr_reason}"
                 return "未命中（找图失败或条件不满足）"
             return "执行成功"
         except Exception as exc:                       # noqa: BLE001
@@ -389,8 +397,18 @@ class Player:
             if logger and ev.type not in ("comment", "loop_end"):
                 elapsed = int((time.perf_counter() - t_start) * 1000)
                 if result == "ok" or result.startswith("ok"):
-                    logger.add("ok", ev.detail(), step=i + 1, lap=lap,
+                    msg = ev.detail()
+                    pos = getattr(self, "last_image_pos", None)
+                    if ev.type == "find_image" and pos:
+                        msg += f" → 点({pos[0]},{pos[1]})"
+                    if ev.type == "ocr" and self.last_ocr_text:
+                        msg += f" → 识别「{self.last_ocr_text}」"
+                    logger.add("ok", msg, step=i + 1, lap=lap,
                                elapsed_ms=elapsed)
+                    if ev.type == "find_image":
+                        note = image_match.describe_last()
+                        if note:
+                            logger.info(note, step=i + 1, lap=lap)
                 else:
                     # 记下失败位置，回放结束后由界面跳到并高亮这一行
                     self.last_fail_event = ev
@@ -479,6 +497,8 @@ class Player:
                 r = self._dispatch(ev, script)
                 if r is False:
                     last = "未命中（找图失败或条件不满足）"
+                    if ev.type == "find_image" and getattr(self, "last_image_reason", ""):
+                        last = f"未命中（{self.last_image_reason}）"
                     self.last_failure = (ev.type, ev.detail())
                 else:
                     return "ok" if k == 0 else f"ok（第 {k+1} 次重试成功）"
@@ -525,6 +545,7 @@ class Player:
         elif ty == "mousedown":
             self._move_to(cx, cy)
             self._mouse.press(BUTTONS.get(ev.button or "left", mouse.Button.left))
+            self._notify_action(cx, cy, ev.button or "left")
 
         elif ty == "mouseup":
             self._move_to(cx, cy)
@@ -533,11 +554,13 @@ class Player:
         elif ty == "click":
             self._move_to(cx, cy)
             self._mouse.click(BUTTONS.get(ev.button or "left", mouse.Button.left))
+            self._notify_action(cx, cy, ev.button or "left")
 
         elif ty == "dblclick":
             self._move_to(cx, cy)
             btn = BUTTONS.get(ev.button or "left", mouse.Button.left)
             self._mouse.click(btn, 2)
+            self._notify_action(cx, cy, ev.button or "left")
 
         elif ty == "drag":
             self._do_drag(ev, script)
@@ -570,6 +593,9 @@ class Player:
         elif ty == "find_image":
             return self._do_find_image(ev)
 
+        elif ty == "ocr":
+            return self._do_ocr(ev)
+
         elif ty in ("comment", "loop_end"):
             pass                        # 注释与块尾不执行
 
@@ -583,6 +609,21 @@ class Player:
             except Exception:
                 pass
 
+    def _notify_action(self, x: int | None, y: int | None,
+                       button: str = "left") -> None:
+        """告诉界面层「这里点了一下」→ 回放时的涟漪特效
+
+        回调在回放线程里执行，界面层负责切回主线程；这里只保证不因
+        回调异常打断回放。
+        """
+        cb = self.on_action
+        if cb is None or x is None or y is None:
+            return
+        try:
+            cb(int(x), int(y), button or "left")
+        except Exception:                              # noqa: BLE001
+            pass
+
     def _do_drag(self, ev: Event, script: Script | None = None) -> None:
         sx, sy = ev.x, ev.y
         ex, ey = ev.x2, ev.y2
@@ -594,6 +635,7 @@ class Player:
         btn = BUTTONS.get(ev.button or "left", mouse.Button.left)
         self._move_to(sx, sy)
         self._mouse.press(btn)
+        self._notify_action(sx, sy, ev.button or "left")
         self._sleep(40)
         # 分段移动，模拟真实拖拽轨迹
         steps = 12
@@ -685,32 +727,117 @@ class Player:
                     pass                # 无法输出的字符（emoji 等）跳过
             time.sleep(0.008)
 
-    def _paste_text(self, text: str) -> bool:
-        """把 text 放入剪贴板后 Ctrl+V 粘贴；成功返回 True"""
+    @staticmethod
+    def _clip_api():
+        """配置好参数字典的剪贴板 API
+
+        64 位下不声明 restype，HGLOBAL / 指针会被截断成 32 位，
+        GlobalLock 拿到的地址是坏的，SetClipboardData 静默失败。
+        """
+        import ctypes
+        from ctypes import wintypes
+
+        u = ctypes.windll.user32
+        k = ctypes.windll.kernel32
+        u.OpenClipboard.argtypes = [wintypes.HWND]
+        u.OpenClipboard.restype = wintypes.BOOL
+        u.EmptyClipboard.restype = wintypes.BOOL
+        u.CloseClipboard.restype = wintypes.BOOL
+        u.GetClipboardData.argtypes = [wintypes.UINT]
+        u.GetClipboardData.restype = wintypes.HANDLE
+        u.SetClipboardData.argtypes = [wintypes.UINT, wintypes.HANDLE]
+        u.SetClipboardData.restype = wintypes.HANDLE
+        k.GlobalAlloc.argtypes = [wintypes.UINT, ctypes.c_size_t]
+        k.GlobalAlloc.restype = wintypes.HANDLE
+        k.GlobalLock.argtypes = [wintypes.HANDLE]
+        k.GlobalLock.restype = ctypes.c_void_p
+        k.GlobalUnlock.argtypes = [wintypes.HANDLE]
+        k.GlobalUnlock.restype = wintypes.BOOL
+        return u, k
+
+    @staticmethod
+    def _open_clipboard(u) -> bool:
+        """剪贴板常被别的程序占着，重试几次再放弃"""
+        for _ in range(4):
+            if u.OpenClipboard(None):
+                return True
+            time.sleep(0.03)
+        return False
+
+    def _clip_get(self) -> str:
+        """读剪贴板里的文本（读不到返回空串）"""
+        try:
+            import ctypes
+            CF_UNICODETEXT = 13
+            u, k = self._clip_api()
+            if not self._open_clipboard(u):
+                return ""
+            try:
+                h = u.GetClipboardData(CF_UNICODETEXT)
+                if not h:
+                    return ""
+                p = k.GlobalLock(h)
+                if not p:
+                    return ""
+                try:
+                    return ctypes.wstring_at(p)
+                finally:
+                    k.GlobalUnlock(h)
+            finally:
+                u.CloseClipboard()
+        except Exception:
+            return ""
+
+    def _clip_set(self, text: str) -> bool:
+        """把文本写进剪贴板（成功返回 True）"""
         try:
             import ctypes
             CF_UNICODETEXT = 13
             GMEM_MOVEABLE = 0x0002
             data = text.encode("utf-16-le") + b"\x00\x00"
-            ctypes.windll.user32.OpenClipboard(0)
+            u, k = self._clip_api()
+            if not self._open_clipboard(u):
+                return False
             try:
-                ctypes.windll.user32.EmptyClipboard()
-                h = ctypes.windll.kernel32.GlobalAlloc(GMEM_MOVEABLE, len(data))
-                p = ctypes.windll.kernel32.GlobalLock(h)
-                ctypes.windll.kernel32.RtlMoveMemory(p, data, len(data))
-                ctypes.windll.kernel32.GlobalUnlock(h)
-                ctypes.windll.user32.SetClipboardData(CF_UNICODETEXT, h)
+                u.EmptyClipboard()
+                h = k.GlobalAlloc(GMEM_MOVEABLE, len(data))
+                if not h:
+                    return False
+                p = k.GlobalLock(h)
+                if not p:
+                    return False
+                ctypes.memmove(p, data, len(data))
+                k.GlobalUnlock(h)
+                if not u.SetClipboardData(CF_UNICODETEXT, h):
+                    return False
             finally:
-                ctypes.windll.user32.CloseClipboard()
-            # Ctrl+V
+                u.CloseClipboard()
+            return True
+        except Exception:
+            return False
+
+    def _paste_text(self, text: str, restore: bool = True) -> bool:
+        """把 text 放进剪贴板后 Ctrl+V 粘贴；成功返回 True
+
+        restore=True 时粘完把剪贴板还原成原来的内容（原来没有文本就留空）。
+        粘贴而不是逐字符输入：中文输入法开着时，逐字输入会被输入法
+        转成候选字，验证码就变样了。
+        """
+        prev = self._clip_get() if restore else ""
+        if not self._clip_set(text):
+            return False
+        try:
             self._kbd.press(keyboard.Key.ctrl)
             self._kbd.press("v")
             self._kbd.release("v")
             self._kbd.release(keyboard.Key.ctrl)
-            time.sleep(0.05)
+            time.sleep(0.12)
             return True
         except Exception:
             return False
+        finally:
+            if restore and prev:
+                self._clip_set(prev)
 
     def _tap(self, key) -> None:
         try:
@@ -773,17 +900,20 @@ class Player:
         """找图能力是否可用（内置实现，随包提供，无需另装依赖）"""
         return image_match.engine_available()
 
-    def _find_image(self, path: str | None, confidence: float):
+    def _find_image(self, path: str | None, confidence: float,
+                    region: tuple[int, int, int, int] | None = None):
         """在屏幕上找图，返回中心坐标 (x, y) 或 None
 
         用内置的 numpy 模板匹配（见 core/image_match.py），
         坐标与录制/回放一致，都是物理像素。
+        region 为 (x, y, 宽, 高) 时只在该矩形内匹配（如任务栏条带）。
         """
         if not path or not os.path.exists(path):
             return None
         if not image_match.engine_available():
             return None
-        return image_match.locate_on_screen(path, confidence or 90)
+        return image_match.locate_on_screen(path, confidence or 90,
+                                            region=region)
 
     def _image_exists(self, path: str | None, timeout_ms: int) -> bool:
         if not path:
@@ -797,14 +927,50 @@ class Player:
             self._sleep(150, 0)
 
     def _do_find_image(self, ev: Event) -> bool:
-        pos = self._find_image(ev.text, ev.dx or 90)
+        pos = self._find_image(ev.text, ev.dx or 90, ev.region())
         if not pos:
+            self.last_image_pos = None
+            self.last_image_reason = (image_match.describe_last()
+                                      or "屏幕上没找到这张图")
             self.last_failure = ("find_image",
                                  (ev.text or "").rsplit("/", 1)[-1])
             return False                # 触发重试
+        self.last_image_pos = pos
+        self.last_image_reason = ""
         self._move_to(*pos)
         time.sleep(0.05)
         self._mouse.click(mouse.Button.left)
+        self._notify_action(pos[0], pos[1], "left")
+        return True
+
+    def _do_ocr(self, ev: Event) -> bool:
+        """识别验证码并自动填写
+
+        1. 截取 ev.region() 指定的屏幕区域
+        2. 交给本机 Umi-OCR（默认 127.0.0.1:1224）识别
+        3. 清洗成能直接输入的验证码
+        4. 有 x/y 就先点一下输入框再输入，没有就输入到当前焦点
+        """
+        self.last_ocr_text = ""
+        code_text, err = ocr.recognize_region(
+            ev.region(), endpoint=ev.text or "")
+        if not code_text:
+            self.last_ocr_reason = err or "没有识别出验证码"
+            self.last_failure = ("ocr", ev.note or "")
+            return False                        # 触发重试
+
+        self.last_ocr_reason = ""
+        if ev.x is not None and ev.y is not None:
+            self._move_to(ev.x, ev.y)
+            self._sleep(60)
+            self._mouse.click(mouse.Button.left)
+            self._notify_action(ev.x, ev.y, "left")
+            self._sleep(120)
+        # 用粘贴而不是逐字输入：输入法（尤其屏幕输入法）开着时，
+        # 逐字敲字母会被转成候选汉字，验证码就填歪了
+        if not self._paste_text(code_text):
+            self._type_text(code_text)          # 剪贴板不可用时退回逐字
+        self.last_ocr_text = code_text
         return True
 
     # ---------------- 清理 ----------------

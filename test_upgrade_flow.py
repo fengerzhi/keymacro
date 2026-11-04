@@ -48,6 +48,8 @@ app_mod.MacroApp._install_update = lambda self, *a, **k: installed.__setitem__("
 
 app = app_mod.MacroApp()
 app.update()
+# 测试会改「升级文件夹」配置，先记下用户原来的值，结束时恢复
+prev_dir = updater.update_dir()
 updater.set_update_dir(adir)
 
 
@@ -64,7 +66,7 @@ check("直接走到安装确认（不再卡在「已是最新」）", installed[
 check("没有误报「已经是最新版本」",
       not any("已经是最新版本" in str(x) for x in asked["info"]), asked["info"])
 
-# ---------------------------------------------------------------- 版本未知时询问
+# ---------------------------------------------------------------- 版本未知 → 按「已是最新」
 asked["yn"].clear()
 asked["info"].clear()
 pkg2 = os.path.join(adir, "没有任何版本信息的包.zip")
@@ -74,22 +76,29 @@ os.remove(pkg)                       # 只留这个无版本包
 app.upgrade_now()
 drive()
 
-check("版本未知时弹「无法识别版本」询问", len(asked["yn"]) == 1, asked["yn"])
-check("拒绝后安装次数未增加", installed["n"] == 1, installed["n"])
-check("版本未知时不报「已是最新」",
-      not any("已经是最新版本" in str(x) for x in asked["info"]), asked["info"])
-
+check("版本未知时不再问「要不要强行覆盖」", len(asked["yn"]) == 0, asked["yn"])
+check("版本未知时提示「已经是最新版本」",
+      any("已经是最新版本" in str(x) for x in asked["info"]), asked["info"])
+check("版本未知时安装次数未增加", installed["n"] == 1, installed["n"])
 
 # ---------------------------------------------------------------- 静默模式不打扰
 asked["yn"].clear()
+asked["info"].clear()
 app.upgrade_now(silent=True)
 drive(800)
 check("静默检查遇到未知版本不弹窗", len(asked["yn"]) == 0, asked["yn"])
+check("静默检查也不弹提示框", len(asked["info"]) == 0, asked["info"])
+
+# 恢复用户原来的升级文件夹（测试往配置里写过临时目录）
+updater.set_update_dir(prev_dir)
+try:
+    app.destroy()
+except Exception:                    # 升级流程里可能已经销毁过窗口
+    pass
 
 print("\n" + "=" * 62)
 print(f"通过 {len(PASS)} 项，失败 {len(FAIL)} 项")
 if FAIL:
     print("失败项：" + "、".join(FAIL))
 print("=" * 62)
-app.destroy()
 sys.exit(1 if FAIL else 0)

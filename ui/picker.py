@@ -64,7 +64,9 @@ class _PickOverlay(tk.Toplevel):
             screen_w // 2, 40, text=hint,
             fill="#ffffff", font=("Microsoft YaHei", 18, "bold"), tags="hint")
         self.canvas.create_text(
-            screen_w // 2, 72, text="Esc 或 右键 取消",
+            screen_w // 2, 72,
+            text=("Esc / 右键 取消 · Enter 结束（按已取的点算）"
+                  if self.count > 1 else "Esc 或 右键 取消"),
             fill="#cccccc", font=("Microsoft YaHei", 12), tags="hint")
 
         # 十字线与坐标标签（初始隐藏）
@@ -85,6 +87,10 @@ class _PickOverlay(tk.Toplevel):
         self.canvas.bind("<Button-3>", lambda e: self._cancel())
         self.bind("<Escape>", lambda e: self._cancel())
         self.bind("<Key>", lambda e: self._cancel() if e.keysym == "Escape" else None)
+        if self.count > 1:
+            # 多点取点允许提前结束（比如验证码只要框区域、不点输入框）
+            self.bind("<Return>", lambda e: self._finish())
+            self.bind("<KP_Enter>", lambda e: self._finish())
 
         self.focus_force()
         self.grab_set()                 # 独占输入

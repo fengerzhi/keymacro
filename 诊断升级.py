@@ -111,7 +111,8 @@ def collect() -> str:
                 out.append(f"是否比本机新：{newer}"
                            f"（{ver} vs {updater.APP_VERSION}）")
             else:
-                out.append("⚠ 读不出版本号：程序会先问你要不要强行覆盖")
+                out.append("⚠ 读不出版本号：会按「已是最新版本」处理，"
+                           "不会覆盖安装（包里缺 version.txt / version.json）")
     except Exception as exc:
         out.append(f"✗ 检查失败：{exc}")
         out.append(traceback.format_exc(limit=3))
