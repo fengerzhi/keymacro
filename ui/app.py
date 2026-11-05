@@ -2988,17 +2988,20 @@ class MacroApp(tk.Tk):
         idx = self._insert_index
         self._insert_index = None
         self._snapshot()
+        # 找图 / 验证码识别要多等一会儿：界面还没稳、图片还没加载、OCR 还要走网络，
+        # 紧贴着上一步执行基本必失败，所以默认留 500ms；其它动作保持 100ms
+        gap = 500 if ev.type in ("find_image", "ocr") else 100
         if idx is None:
-            ev.t = self.script.duration_ms + 100 if self.script.events else 0
+            ev.t = self.script.duration_ms + gap if self.script.events else 0
             i = self.script.insert_sorted(ev)
         else:
             idx = max(0, min(int(idx), len(self.script.events)))
             prev_t = self.script.events[idx - 1].t if idx > 0 else 0
             if idx < len(self.script.events):
                 # 不越过插入点后那条事件的时间，保持整体单调
-                ev.t = min(prev_t + 1, self.script.events[idx].t)
+                ev.t = min(prev_t + gap, self.script.events[idx].t)
             else:
-                ev.t = prev_t + 1
+                ev.t = prev_t + gap
             self.script.events.insert(idx, ev)
             i = idx
         self._refresh_list()

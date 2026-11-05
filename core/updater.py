@@ -39,12 +39,11 @@ import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 
-APP_VERSION = "1.8.2"
+APP_VERSION = "1.8.3"
 
 # 当前版本的更新说明：生成升级包时写入 notes.txt，升级窗口会自动显示
-RELEASE_NOTES = """v1.8.2
-- 升级改为「增量覆盖」：只替换内容真的变了的文件，没变的原样保留。以前每次升级都会把整个目录（几百个文件、几十 MB）重写一遍，又慢，正在被占用的 exe/dll 也更容易替换失败
-- 升级结果里新增 changed / skipped 两项，能直接看出这次动了多少个文件；替换失败的文件会一次性列出名字，不用再反复试"""
+RELEASE_NOTES = """v1.8.3
+- 插入「找图点击」「验证码识别」时默认留 0.5 秒前置间隔（以前只有 0.1 秒，界面还没稳、图片还没加载完就执行，常常找不到图或识别失败）；其它动作仍然是 0.1 秒"""
 
 
 
