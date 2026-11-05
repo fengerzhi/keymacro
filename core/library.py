@@ -1,27 +1,31 @@
 """library.py —— 脚本库
 
-把脚本统一存放到用户目录，避免每次都弹文件选择框。
+脚本直接存放在**程序安装目录下的「脚本」文件夹**里，打开「目录」就能看到、
+直接改文件，不用再去 AppData 里翻。
 
 存储结构
 ─────────────────────────────────────────
-    ~/.macro-sprite/
-    ├── scripts/
-    │   ├── index.json          # 元数据索引（名称/时间/事件数/使用次数）
-    │   ├── 打卡签到.json
-    │   └── 数据导出.json
+    <安装目录>/                     # 打包版 = exe 所在目录
+    ├── 按键精灵.exe
+    └── 脚本/
+        ├── index.json          # 元数据索引（名称/时间/事件数/使用次数）
+        ├── 打卡签到.json
+        └── 数据导出.json
+
+    ~/.macro-sprite/                # 用户数据（配置/日志/回收站）
     ├── logs/
-    │   ├── 20261029_213000_打卡签到.jsonl
     │   └── screenshots/
-    │       └── 20261029_213015_fail.png
-    └── config.json             # 应用级配置（热键等）
+    ├── trash/                      # 删除的脚本先挪到这里
+    └── config.json                 # 应用级配置（热键等）
 
 设计要点
 ─────────────────────────────────────────
 1. 以文件为真相源：index.json 只是加速缓存，损坏或缺失时可从
    目录里的 .json 文件自动重建，不会丢脚本。
-2. 文件名安全化：脚本名可含中文/空格，但落盘前过滤非法字符。
-3. 重名保护：同一名字自动加序号，不覆盖已有脚本。
-4. 最近使用排序：记录 last_used，UI 按此排序便于快速访问。
+2. 文件夹即接口：往「脚本」文件夹里丢 .json、或直接改文件，列表刷新就能看到。
+3. 安装目录不可写（例如装到了 Program Files）时自动退回用户目录，
+   不会因为一处没权限就存不了脚本。
+4. 文件名安全化 + 重名保护：脚本名可含中文/空格，同名自动加序号。
 5. 原子写入：先写临时文件再替换，避免中途崩溃导致文件损坏。
 """
 
@@ -31,6 +35,7 @@ import json
 import os
 import re
 import shutil
+import sys
 import time
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
@@ -40,15 +45,47 @@ from .script_model import Script
 
 APP_DIR_NAME = ".macro-sprite"
 
+# 安装目录下放脚本的文件夹名
+SCRIPTS_DIR_NAME = "脚本"
+
 # 文件名非法字符（Windows 更严格，统一按最严标准过滤）
 _ILLEGAL = re.compile(r'[\\/:*?"<>|\x00-\x1f]')
 
 
+def install_dir() -> Path:
+    """程序安装目录（打包版 = exe 所在目录；源码版 = 项目根）"""
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parent.parent
+
+
 def app_dir() -> Path:
-    """应用数据目录"""
+    """应用数据目录（配置 / 日志 / 回收站）"""
     d = Path.home() / APP_DIR_NAME
     (d / "scripts").mkdir(parents=True, exist_ok=True)
     (d / "logs" / "screenshots").mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _writable(d: Path) -> bool:
+    """目录能不能真的写进去（能建目录 ≠ 能建文件）"""
+    try:
+        d.mkdir(parents=True, exist_ok=True)
+        probe = d / f".write_test_{os.getpid()}"
+        probe.write_text("", encoding="utf-8")
+        probe.unlink(missing_ok=True)
+        return True
+    except Exception:
+        return False
+
+
+def scripts_dir() -> Path:
+    """脚本库目录：优先 `<安装目录>/脚本`，不可写时退回用户目录"""
+    cand = install_dir() / SCRIPTS_DIR_NAME
+    if _writable(cand):
+        return cand
+    d = app_dir() / "scripts"
+    d.mkdir(parents=True, exist_ok=True)
     return d
 
 
@@ -73,6 +110,8 @@ class ScriptMeta:
     event_count: int = 0
     duration_ms: int = 0
     use_count: int = 0
+    # 文件 mtime（精确到浮点）：用来发现「文件被改过」，字符串只有秒级精度会漏
+    mtime: float = 0.0
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -97,11 +136,37 @@ class ScriptLibrary:
 
     def __init__(self, root: Path | None = None):
         self.root = Path(root) if root else app_dir()
-        self.scripts_dir = self.root / "scripts"
+        if root:
+            self.scripts_dir = self.root / "scripts"
+        else:
+            self.scripts_dir = scripts_dir()
         self.scripts_dir.mkdir(parents=True, exist_ok=True)
         self.index_path = self.scripts_dir / "index.json"
         self._index: dict[str, ScriptMeta] = {}
+        # 老版本把脚本放在 ~/.macro-sprite/scripts：搬家一次，别让用户以为脚本丢了
+        self.migrated = 0 if root else self._migrate_from(app_dir() / "scripts")
         self._load_index()
+
+    def _migrate_from(self, old: Path) -> int:
+        """把旧位置的脚本搬进「安装目录/脚本」（新目录已有脚本则不动）"""
+        try:
+            if not old.is_dir() or old.resolve() == self.scripts_dir.resolve():
+                return 0
+            olds = [p for p in old.glob("*.json") if p.name != "index.json"]
+            if not olds:
+                return 0
+            if any(p.name != "index.json"
+                   for p in self.scripts_dir.glob("*.json")):
+                return 0                    # 新目录已经有脚本，不覆盖
+            for p in olds:
+                shutil.copy2(p, self.scripts_dir / p.name)
+            # 索引一起搬过来，保住「最近使用」排序与使用次数
+            old_index = old / "index.json"
+            if old_index.exists() and not self.index_path.exists():
+                shutil.copy2(old_index, self.index_path)
+            return len(olds)
+        except Exception:
+            return 0
 
     # ------------------------------------------------------------ 索引
     def _load_index(self) -> None:
@@ -120,22 +185,56 @@ class ScriptLibrary:
                                           for k, v in self._index.items()}}
         _atomic_write_json(self.index_path, data)
 
-    def refresh(self) -> None:
-        """扫描目录，补齐/清理索引条目（不读脚本内容，用文件大小快速跳过）"""
-        on_disk = {p.name for p in self.scripts_dir.glob("*.json")
-                   if p.name != "index.json"}
+    def _disk_stamp(self) -> dict[str, float]:
+        """目录里每个 .json 的修改时间（不含索引本身）"""
+        out: dict[str, float] = {}
+        for p in self.scripts_dir.glob("*.json"):
+            if p.name == "index.json":
+                continue
+            try:
+                out[p.name] = p.stat().st_mtime
+            except Exception:
+                pass
+        return out
+
+    def signature(self) -> tuple[int, int]:
+        """目录快照（文件数 + 最新修改时间），用来判断列表要不要刷新"""
+        st = self._disk_stamp()
+        return len(st), int(max(st.values(), default=0))
+
+    def refresh(self) -> bool:
+        """扫描目录，补齐 / 清理 / 更新索引；返回索引是否有变化
+
+        文件夹就是接口：用户在外面往「脚本」里丢 .json、或者直接改文件，
+        这里按 mtime 就能发现，不用重启程序。
+        """
+        stamps = self._disk_stamp()
+        changed = False
 
         # 移除索引里已不存在的文件
         for fname in list(self._index.keys()):
-            if fname not in on_disk:
+            if fname not in stamps:
                 del self._index[fname]
+                changed = True
 
-        # 补上磁盘上有但索引里没有的
-        for fname in on_disk - set(self._index.keys()):
-            meta = self._meta_from_file(fname)
-            if meta:
-                self._index[fname] = meta
-        self._save_index()
+        # 新增的、以及文件被改过的，重新解析
+        for fname, mtime in stamps.items():
+            meta = self._index.get(fname)
+            if meta is not None and abs(meta.mtime - mtime) < 1e-6:
+                continue
+            new = self._meta_from_file(fname)
+            if not new:
+                continue                    # 损坏文件跳过，不阻塞
+            if meta is not None:            # 保住使用统计
+                new.last_used = meta.last_used
+                new.use_count = meta.use_count
+                new.created_at = new.created_at or meta.created_at
+            self._index[fname] = new
+            changed = True
+
+        if changed:
+            self._save_index()
+        return changed
 
     def _meta_from_file(self, fname: str) -> ScriptMeta | None:
         path = self.scripts_dir / fname
@@ -153,6 +252,7 @@ class ScriptLibrary:
                 modified_at=mtime,
                 event_count=len(events),
                 duration_ms=dur,
+                mtime=st.st_mtime,
             )
         except Exception:
             return None                 # 损坏文件跳过，不阻塞
@@ -226,6 +326,7 @@ class ScriptLibrary:
             created_at=script.created_at or now,
             modified_at=now, last_used=now,
             event_count=len(script.events), duration_ms=script.duration_ms,
+            mtime=_mtime_of(path),
         )
         self._index[fname] = meta
         self._save_index()
@@ -243,6 +344,7 @@ class ScriptLibrary:
         meta.modified_at = _now()
         meta.event_count = len(script.events)
         meta.duration_ms = script.duration_ms
+        meta.mtime = _mtime_of(path)
         self._save_index()
         return meta
 
@@ -273,6 +375,7 @@ class ScriptLibrary:
             script.save(str(new_path))
         except Exception:
             pass
+        meta.mtime = _mtime_of(new_path)
         self._save_index()
         return meta
 
@@ -336,6 +439,14 @@ class ScriptLibrary:
 # ================================================================ 工具
 def _now() -> str:
     return time.strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _mtime_of(path: Path) -> float:
+    """文件的 mtime；读不到返回 0（下次 refresh 会重新解析一遍）"""
+    try:
+        return path.stat().st_mtime
+    except Exception:
+        return 0.0
 
 
 def _atomic_write_json(path: Path, data: dict) -> None:

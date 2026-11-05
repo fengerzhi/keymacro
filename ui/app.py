@@ -3073,6 +3073,12 @@ class MacroApp(tk.Tk):
         self.lib_tree.bind("<Double-1>", lambda e: self.lib_open())
         self.lib_tree.bind("<Button-3>", self._on_lib_right_click)
 
+        # 「脚本」文件夹在安装目录里，用户会在外面直接改动它：
+        # 鼠标移到列表上时顺手对一下，文件变了就自动刷新
+        self._lib_sign: tuple[int, int] | None = None
+        self.lib_tree.bind("<Enter>", self._lib_autorefresh, add="+")
+        parent.bind("<Enter>", self._lib_autorefresh, add="+")
+
         # 信息条
         self.lib_info_var = tk.StringVar(value="选中脚本查看详情")
         self.lib_info_lbl = ttk.Label(parent, textvariable=self.lib_info_var,
@@ -3119,14 +3125,41 @@ class MacroApp(tk.Tk):
 
         self._refresh_library()
 
+        # 老版本的用户脚本被搬到安装目录时，明确告诉他们搬到哪了
+        n_moved = getattr(self.library, "migrated", 0)
+        if n_moved:
+            where = str(self.library.scripts_dir)
+            self.after(900, lambda: self._set_status(
+                f"已把 {n_moved} 个旧脚本搬到：{where}"))
+
     def _lib_clear_search(self) -> None:
         self.lib_search_var.set("")
         self._refresh_library()
 
+    def _lib_dir_signature(self) -> tuple[int, int]:
+        try:
+            return self.library.signature()
+        except Exception:                      # noqa: BLE001
+            return (0, 0)
+
+    def _lib_autorefresh(self, _evt=None) -> None:
+        """「脚本」文件夹变了就刷新列表（拖进新脚本、改了文件都能看到）"""
+        if getattr(self, "_lib_sign", None) != self._lib_dir_signature():
+            self._refresh_library()
+
     def _refresh_library(self) -> None:
-        """重新填充脚本库列表"""
+        """重新填充脚本库列表
+
+        每次都先跟「脚本」文件夹对齐：用户在外面往文件夹里丢了 .json、
+        或直接改了文件，切回窗口就能在列表里看到，不用重启。
+        """
         if not hasattr(self, "lib_tree"):
             return
+        try:
+            self.library.refresh()
+        except Exception:                      # noqa: BLE001
+            pass
+        self._lib_sign = self._lib_dir_signature()
         sort_map = {"最近使用": "recent", "名称": "name", "创建时间": "created"}
         kw = self.lib_search_var.get().strip()
         items = self.library.list(kw, sort_map.get(self.lib_sort_var.get(), "recent"))
@@ -3345,6 +3378,7 @@ class MacroApp(tk.Tk):
                 parent=self)
 
     def open_lib_dir(self) -> None:
+        """打开脚本目录（安装目录下的「脚本」，装到只读位置时退回用户目录）"""
         d = str(self.library.scripts_dir)
         try:
             if SYSTEM == "Windows":
@@ -3355,6 +3389,7 @@ class MacroApp(tk.Tk):
                 os.system(f'xdg-open "{d}" >/dev/null 2>&1 &')
         except Exception:
             messagebox.showinfo("脚本库目录", d)
+        self._set_status(f"脚本目录：{d}（把脚本放进这个文件夹，列表会自动刷新）")
 
     # ============================================================ 执行日志
     def _build_log_panel(self, parent: ttk.Frame) -> None:

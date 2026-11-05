@@ -40,12 +40,14 @@ import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 
-APP_VERSION = "1.8.5"
+APP_VERSION = "1.8.6"
 
 # 当前版本的更新说明：生成升级包时写入 notes.txt，升级窗口会自动显示
-RELEASE_NOTES = """v1.8.5
-- 修复拖动排序时「时间」「间隔」被钉在原行的问题：现在被拖的行会带着自己的间隔一起走，落位后整表按间隔重新累加时间
-- 修复改间隔 / 统一间隔后「时间」列不跟着累加的问题：时间现在由间隔逐行相加得出，改完立刻看到后面每步的新时间"""
+RELEASE_NOTES = """v1.8.6
+- 脚本库改到安装目录下的「脚本」文件夹：点「目录」直接打开，把 .json 丢进去或直接改文件，列表会自动刷新，不用再去 AppData 里翻
+- 老版本存在用户目录里的脚本，第一次启动会自动搬进「脚本」文件夹，使用次数与「最近使用」排序都保留
+- 卸载时先把「脚本」备份到用户目录，重装后自动还原，不会因为卸载丢脚本
+- 升级包与源码包不再包含本机的「脚本」文件夹，避免把个人脚本打进去"""
 
 
 
@@ -979,7 +981,9 @@ def build_update_zip(out_path: str | Path | None = None) -> Path:
     out = Path(out_path) if out_path else Path(
         tempfile.gettempdir()) / f"keymacro-{APP_VERSION}.zip"
     skip_dirs = {".git", "__pycache__", "build", "dist", ".idea", ".vscode",
-                 "node_modules", ".codebuddy"}
+                 "node_modules", ".codebuddy",
+                 # 「脚本」是用户自己的东西，绝不能打进升级包发给别人
+                 "脚本", "trash", "logs"}
     skip_suffix = {".zip", ".pyc", ".part", ".log"}
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zf:
         for src in install.rglob("*"):

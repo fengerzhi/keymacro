@@ -36,6 +36,8 @@ DIST = os.path.join(ROOT, "dist")
 EXCLUDE_DIRS = {
     ".git", "__pycache__", ".pyinstaller", "dist",
     ".idea", ".vscode", "node_modules", ".codebuddy", ".pytest_cache",
+    # 用户脚本目录（安装目录里自动生成），不进源码包
+    "脚本", "trash", "logs",
 }
 EXCLUDE_FILES = {"打包日志.txt"}
 EXCLUDE_SUFFIX = {".pyc", ".pyo", ".zip", ".log", ".part", ".tmp"}

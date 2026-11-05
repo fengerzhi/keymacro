@@ -7,7 +7,10 @@ os.environ["HOME"] = tempfile.mkdtemp(prefix="macro-gap-test-")
 
 import tkinter as tk
 import core.library as cl
-cl.app_dir = lambda: __import__("pathlib").Path(os.environ["HOME"]) / ".macro-sprite"
+from pathlib import Path
+cl.app_dir = lambda: Path(os.environ["HOME"]) / ".macro-sprite"
+# 脚本库现在落在「安装目录/脚本」：测试里指到临时目录，别污染项目根
+cl.install_dir = lambda: Path(os.environ["HOME"]) / "install"
 
 from core.script_model import Script, Event
 from ui import app as app_mod

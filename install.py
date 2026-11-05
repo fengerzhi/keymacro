@@ -38,7 +38,7 @@ for _stream in (sys.stdout, sys.stderr):
 
 APP_NAME = "按键精灵"
 APP_ID = "KeyMacro"
-DEFAULT_VERSION = "1.8.5"
+DEFAULT_VERSION = "1.8.6"
 
 
 def app_version() -> str:
@@ -141,7 +141,9 @@ def log(msg: str) -> None:
 
 # ------------------------------------------------------------------ 复制文件
 SKIP_DIRS = {".git", "__pycache__", ".pyinstaller", "build", "dist", ".idea",
-             ".vscode", "node_modules", ".codebuddy"}
+             ".vscode", "node_modules", ".codebuddy",
+             # 脚本库是用户数据，安装时不要从开发目录带过去（程序首次运行会自己建）
+             "脚本", "trash", "logs"}
 # 注意：绝不能跳过 .zip！打包版运行必需的 _internal/base_library.zip
 # （里面有 encodings 模块）就是 .zip，漏掉它程序会直接起不来。
 SKIP_SUFFIX = {".pyc", ".part", ".log"}
@@ -368,11 +370,14 @@ def write_uninstaller(dst: Path) -> None:
         'del /f /q "%USERPROFILE%\\Desktop\\按键精灵.lnk" >nul 2>nul',
         'del /f /q "%APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\按键精灵.lnk" >nul 2>nul',
         'reg delete "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\KeyMacro" /f >nul 2>nul',
+        # 脚本库在安装目录里：删目录前先备份，重装后程序会自动搬回去
+        'if exist "%D%\\脚本" echo 正在备份脚本到 %USERPROFILE%\\.macro-sprite\\scripts ...',
+        'if exist "%D%\\脚本" xcopy "%D%\\脚本" "%USERPROFILE%\\.macro-sprite\\scripts\\" /E /I /Y >nul 2>nul',
         '> "%TEMP%\\km_uninst.bat" echo ping 127.0.0.1 -n 3 ^>nul',
         '>> "%TEMP%\\km_uninst.bat" echo rmdir /s /q "%D%"',
         'start "" /min cmd /c "%TEMP%\\km_uninst.bat"',
         "echo.",
-        "echo 已卸载（配置数据保留在 %APPDATA%\\.macro-sprite）。",
+        "echo 已卸载（脚本已备份到 %USERPROFILE%\\.macro-sprite\\scripts，重装后自动还原）。",
         ":end",
         "echo.",
         "pause >nul",
