@@ -39,12 +39,12 @@ import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 
-APP_VERSION = "1.8.1"
+APP_VERSION = "1.8.2"
 
 # 当前版本的更新说明：生成升级包时写入 notes.txt，升级窗口会自动显示
-RELEASE_NOTES = """v1.8.1
-- 修复「追加录制」不生效：停止录制时用刚录的事件整段覆盖了脚本，原有步骤全被丢掉、新事件又从 0 秒开始，看起来就跟清空重录一样；现在接在原有末尾之后继续（原有最后时间 + 0.3 秒）
-- 修复追加录制中途点「放弃本次录制」会把原有步骤一起清空的问题，现在只丢弃本次新录的那部分"""
+RELEASE_NOTES = """v1.8.2
+- 升级改为「增量覆盖」：只替换内容真的变了的文件，没变的原样保留。以前每次升级都会把整个目录（几百个文件、几十 MB）重写一遍，又慢，正在被占用的 exe/dll 也更容易替换失败
+- 升级结果里新增 changed / skipped 两项，能直接看出这次动了多少个文件；替换失败的文件会一次性列出名字，不用再反复试"""
 
 
 
@@ -545,19 +545,61 @@ def build_ps_command(staging: Path, install: Path, launch: str, proc: str,
         " New-Item -ItemType Directory -Force -Path $dst | Out-Null }",
         "$ok = $false",
         "$err = ''",
-        "$code = 16",
-        "for ($i = 0; $i -lt 6; $i++) {",
+        # ---- 增量覆盖：只复制内容真的变了的文件 ----
+        # 以前 robocopy /E /IS /IT 里的 /IS 会把「同名同内容」的文件也重写一遍，
+        # 每次升级都把整个目录刷一遍：又慢，exe/dll 被占用时也更容易失败。
+        # 现在先比大小和修改时间；时间对不上再算 SHA256（升级包解压出来的
+        # 时间戳几乎全都跟已装的文件不同，所以哈希这条路的命中率很高，
+        # 用 .NET 的 SHA256 直算，比 Get-FileHash cmdlet 快一个数量级）。
+        "$sha = [System.Security.Cryptography.SHA256]::Create()",
+        "function Get-Sha([string]$p) {",
+        "  $fs = $null",
         "  try {",
-        "    robocopy $src $dst /E /IS /IT /R:2 /W:1 /XF _apply_update.bat"
-        " /NFL /NDL /NJH /NJS /NP | Out-Null",
-        "    $code = $LASTEXITCODE",
-        "  } catch { $err = $_.Exception.Message; $code = 16 }",
-        "  if ($code -lt 8) { break }",
-        "  Start-Sleep -Seconds 2",
+        "    $fs = [System.IO.File]::OpenRead($p)",
+        "    [BitConverter]::ToString($sha.ComputeHash($fs))",
+        "  } catch { '' } finally { if ($fs) { $fs.Dispose() } }",
         "}",
-        "$ok = ($code -lt 8)",
-        "if (-not $ok -and -not $err) {",
-        "  $err = \"robocopy 返回码 $code（文件被占用或没有写入权限）\"",
+        "$changed = 0",
+        "$same = 0",
+        "$failed = @()",
+        "$srcLen = $src.TrimEnd('\\').Length",
+        "foreach ($f in @(Get-ChildItem -LiteralPath $src -Recurse -File -Force"
+        " -ErrorAction SilentlyContinue)) {",
+        "  $rel = $f.FullName.Substring($srcLen).TrimStart('\\')",
+        "  $tgt = Join-Path $dst $rel",
+        "  $need = $true",
+        "  if (Test-Path -LiteralPath $tgt -PathType Leaf) {",
+        "    $ti = Get-Item -LiteralPath $tgt -ErrorAction SilentlyContinue",
+        "    if ($ti -and $ti.Length -eq $f.Length) {",
+        "      $dt = [math]::Abs(($ti.LastWriteTimeUtc -"
+        " $f.LastWriteTimeUtc).TotalSeconds)",
+        "      if ($dt -le 2) { $need = $false }",
+        "      elseif ((Get-Sha $f.FullName) -eq (Get-Sha $tgt)) {"
+        " $need = $false }",
+        "    }",
+        "  }",
+        "  if (-not $need) { $same++; continue }",
+        "  for ($t = 0; $t -lt 3; $t++) {",
+        "    try {",
+        "      $pd = Split-Path -Parent $tgt",
+        "      if ($pd -and -not (Test-Path -LiteralPath $pd)) {"
+        " New-Item -ItemType Directory -Force -Path $pd | Out-Null }",
+        "      Copy-Item -LiteralPath $f.FullName -Destination $tgt -Force"
+        " -ErrorAction Stop",
+        "      $changed++",
+        "      break",
+        "    } catch {",
+        "      if ($t -eq 2) {",
+        "        $failed += $rel",
+        "        $err = $_.Exception.Message",
+        "      } else { Start-Sleep -Milliseconds 400 }",
+        "    }",
+        "  }",
+        "}",
+        "$ok = ($failed.Count -eq 0)",
+        "if (-not $ok) {",
+        "  $err = \"这些文件没能替换：\" + ($failed -join ', ') +"
+        " \"（被占用或没有写入权限）\"",
         "}",
         # ---- 核对：关键文件必须真的换了 ----
         "$bad = @()",
@@ -593,7 +635,8 @@ def build_ps_command(staging: Path, install: Path, launch: str, proc: str,
         "    \"time=$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')\",",
         "    \"src=$src\",",
         "    \"dst=$dst\",",
-        "    \"robocopy=$code\",",
+        "    \"changed=$changed\",",
+        "    \"skipped=$same\",",
         "    \"running=$left\",",
         "    \"restarted=$done\",",
         "    \"error=$err\",",
@@ -735,7 +778,9 @@ def plan_update(zip_path: str | Path, target_version: str = "") -> UpdatePlan:
             "set /a TRY=0",
             ":copy",
             "set /a TRY+=1",
-            'robocopy "." "%~1" /E /IS /IT /R:2 /W:1 /NFL /NDL /NJH /NJS /NP',
+            # 不加 /IS /IT：默认只复制「源较新或目标不存在」的文件，
+            # 已经是同一份的文件不再重复写一遍（和 PowerShell 主流程同一个意思）
+            'robocopy "." "%~1" /E /R:2 /W:1 /NFL /NDL /NJH /NJS /NP',
             "if errorlevel 8 goto :retry",
             "goto :ok",
             ":retry",

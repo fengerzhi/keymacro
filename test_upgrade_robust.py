@@ -207,7 +207,10 @@ def main() -> int:
         ck("按 pid 结束本程序", "Stop-Process -Id $targetPid" in script)
         ck("等待进程真正退出", "Wait-Process" in script)
         ck("按名字兜底结束", "Get-Process -Name $pname" in script)
-        ck("用 robocopy 覆盖", "robocopy $src $dst" in script)
+        ck("增量覆盖：逐个文件比对后复制",
+           "$changed = 0" in script and "Copy-Item -LiteralPath $f.FullName" in script)
+        ck("内容没变的文件跳过（先比大小+时间，必要时比 SHA256）",
+           "$same++" in script and "$dt -le 2" in script)
         ck("覆盖后用 SHA256 核对", "Get-FileHash" in script)
         ck("核对失败会说明是哪几个文件",
            "这些文件没有被替换" in script)

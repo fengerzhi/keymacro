@@ -87,7 +87,9 @@ check("解码后含正确的安装目录（中文/空格/括号原样）",
       install in ps, [l for l in ps.splitlines() if l.startswith("$dst")])
 check("解码后含启动目标", plan.launch in ps)
 check("解码后不含 chcp（完全不经过 cmd 代码页）", "chcp" not in ps)
-check("用 robocopy 复制并重试（PowerShell 传参走 Unicode）", "robocopy" in ps and "for ($i" in ps)
+check("逐个文件增量复制并重试（PowerShell 传参走 Unicode）",
+      "Copy-Item -LiteralPath $f.FullName" in ps
+      and "for ($t = 0; $t -lt 3; $t++)" in ps)
 check("先结束旧进程", "Stop-Process" in ps)
 check("复制成功后重启", "Start-Process" in ps)
 check("单引号路径已转义", "''" in ps or "'" in ps)

@@ -1,9 +1,9 @@
-219 INFO: PyInstaller: 6.22.3, contrib hooks: 2026.7
-220 INFO: Python: 3.14.2
-247 INFO: Platform: Windows-11-10.0.26200-SP0
-248 INFO: Python environment: C:\Python314
-249 INFO: wrote C:\Users\22576\Desktop\按键精灵-1.7.0-Windows打包\.pyinstaller\按键精灵.spec
-685 INFO: Module search paths (PYTHONPATH):
+206 INFO: PyInstaller: 6.22.3, contrib hooks: 2026.7
+207 INFO: Python: 3.14.2
+236 INFO: Platform: Windows-11-10.0.26200-SP0
+236 INFO: Python environment: C:\Python314
+237 INFO: wrote C:\Users\22576\Desktop\按键精灵-1.7.0-Windows打包\.pyinstaller\按键精灵.spec
+620 INFO: Module search paths (PYTHONPATH):
 ['C:\\Users\\22576\\Desktop\\按键精灵-1.7.0-Windows打包',
  'D:\\Users\\22576\\AppData\\Local\\Programs\\CodeBuddy '
  'CN\\resources\\app\\extensions\\genie\\out\\vendor\\shim',
@@ -14,97 +14,97 @@
  'C:\\Users\\22576\\AppData\\Roaming\\Python\\Python314\\site-packages',
  'C:\\Python314\\Lib\\site-packages',
  'C:\\Users\\22576\\Desktop\\按键精灵-1.7.0-Windows打包']
-1292 INFO: Appending 'datas' from .spec
-1292 INFO: checking Analysis
-1292 INFO: Building Analysis because Analysis-00.toc is non existent
-1292 INFO: Looking for Python shared library...
-1292 INFO: Using Python shared library: C:\Python314\python314.dll
-1292 INFO: Running Analysis Analysis-00.toc
-1292 INFO: Target bytecode optimization level: 0
-1292 INFO: Initializing module dependency graph...
-1294 INFO: Initializing module graph hook caches...
-1458 INFO: Analyzing modules for base_library.zip ...
-3729 INFO: Processing standard module hook 'hook-encodings.py' from 'C:\\Users\\22576\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
-4525 INFO: Processing standard module hook 'hook-pickle.py' from 'C:\\Users\\22576\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
-4891 INFO: Processing standard module hook 'hook-math.py' from 'C:\\Users\\22576\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
-5128 INFO: Processing standard module hook 'hook-difflib.py' from 'C:\\Users\\22576\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
-5158 INFO: Processing standard module hook 'hook-heapq.py' from 'C:\\Users\\22576\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
-10716 INFO: Caching module dependency graph...
-10751 INFO: Analyzing C:\Users\22576\Desktop\按键精灵-1.7.0-Windows打包\main.py
-10809 INFO: Processing standard module hook 'hook-platform.py' from 'C:\\Users\\22576\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
-10887 INFO: Processing standard module hook 'hook-sysconfig.py' from 'C:\\Users\\22576\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
-10907 INFO: Processing standard module hook 'hook-_ctypes.py' from 'C:\\Users\\22576\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
-10927 INFO: Processing pre-find-module-path hook 'hook-tkinter.py' from 'C:\\Users\\22576\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks\\pre_find_module_path'
-10932 INFO: TclTkInfo: initializing cached Tcl/Tk info...
-11501 INFO: Processing standard module hook 'hook-_tkinter.py' from 'C:\\Users\\22576\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
-11617 INFO: Processing standard module hook 'hook-openpyxl.py' from 'C:\\Users\\22576\\AppData\\Roaming\\Python\\Python314\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
-11793 INFO: Processing standard module hook 'hook-numpy.py' from 'C:\\Users\\22576\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
-12659 INFO: Processing pre-safe-import-module hook 'hook-typing_extensions.py' from 'C:\\Users\\22576\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
-12663 INFO: SetuptoolsInfo: initializing cached setuptools info...
-14715 INFO: Processing standard module hook 'hook-webbrowser.py' from 'C:\\Users\\22576\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
-17080 INFO: Processing standard module hook 'hook-multiprocessing.util.py' from 'C:\\Users\\22576\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
-17271 INFO: Processing standard module hook 'hook-xml.py' from 'C:\\Users\\22576\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
-20545 INFO: Processing standard module hook 'hook-xml.etree.cElementTree.py' from 'C:\\Users\\22576\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
-21684 INFO: Processing standard module hook 'hook-PIL.py' from 'C:\\Users\\22576\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
-21868 INFO: Processing standard module hook 'hook-PIL.Image.py' from 'C:\\Users\\22576\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
-22891 INFO: Processing standard module hook 'hook-PIL.ImageFilter.py' from 'C:\\Users\\22576\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
-24925 INFO: Processing standard module hook 'hook-pynput.py' from 'C:\\Users\\22576\\AppData\\Roaming\\Python\\Python314\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
-25434 INFO: Processing pre-safe-import-module hook 'hook-six.moves.py' from 'C:\\Users\\22576\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
-26384 INFO: Analyzing hidden import 'pynput._info'
-26393 INFO: Analyzing hidden import 'pynput._util.darwin'
-26499 INFO: Analyzing hidden import 'pynput._util.darwin_vks'
-26509 INFO: Analyzing hidden import 'pynput._util.uinput'
-26523 INFO: Analyzing hidden import 'pynput._util.win32'
-26568 INFO: Analyzing hidden import 'pynput._util.xorg'
-26697 INFO: Analyzing hidden import 'pynput.keyboard._base'
-26727 INFO: Analyzing hidden import 'pynput.keyboard._darwin'
-26750 INFO: Analyzing hidden import 'pynput.keyboard._dummy'
-26761 INFO: Analyzing hidden import 'pynput.keyboard._uinput'
-26789 INFO: Analyzing hidden import 'pynput.keyboard._win32'
-26813 INFO: Analyzing hidden import 'pynput.keyboard._xorg'
-26847 INFO: Analyzing hidden import 'pynput.mouse._base'
-26865 INFO: Analyzing hidden import 'pynput.mouse._darwin'
-26883 INFO: Analyzing hidden import 'pynput.mouse._dummy'
-26891 INFO: Analyzing hidden import 'pynput.mouse._win32'
-26909 INFO: Analyzing hidden import 'pynput.mouse._xorg'
-26927 INFO: Processing module hooks (post-graph stage)...
-27729 INFO: Processing standard module hook 'hook-PIL.SpiderImagePlugin.py' from 'C:\\Users\\22576\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
-28003 INFO: Processing standard module hook 'hook-_tkinter.py' from 'C:\\Users\\22576\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
-28018 INFO: Performing binary vs. data reclassification (930 entries)
-34295 INFO: Looking for ctypes DLLs
-34382 INFO: Analyzing run-time hooks ...
-34386 INFO: Including run-time hook 'pyi_rth_inspect.py' from 'C:\\Users\\22576\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks\\rthooks'
-34398 INFO: Including run-time hook 'pyi_rth_pkgutil.py' from 'C:\\Users\\22576\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks\\rthooks'
-34411 INFO: Including run-time hook 'pyi_rth_multiprocessing.py' from 'C:\\Users\\22576\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks\\rthooks'
-34423 INFO: Including run-time hook 'pyi_rth__tkinter.py' from 'C:\\Users\\22576\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks\\rthooks'
-34464 INFO: Creating base_library.zip...
-34486 INFO: Looking for dynamic libraries
-35939 INFO: Extra DLL search directories (AddDllDirectory): ['C:\\Users\\22576\\AppData\\Roaming\\Python\\Python314\\site-packages\\numpy.libs']
-35939 INFO: Extra DLL search directories (PATH): []
-36497 INFO: Warnings written to C:\Users\22576\Desktop\按键精灵-1.7.0-Windows打包\.pyinstaller\按键精灵\warn-按键精灵.txt
-36561 INFO: Graph cross-reference written to C:\Users\22576\Desktop\按键精灵-1.7.0-Windows打包\.pyinstaller\按键精灵\xref-按键精灵.html
-36642 INFO: checking PYZ
-36642 INFO: Building PYZ because PYZ-00.toc is non existent
-36642 INFO: Building PYZ (ZlibArchive) C:\Users\22576\Desktop\按键精灵-1.7.0-Windows打包\.pyinstaller\按键精灵\PYZ-00.pyz
-37073 INFO: Building PYZ (ZlibArchive) C:\Users\22576\Desktop\按键精灵-1.7.0-Windows打包\.pyinstaller\按键精灵\PYZ-00.pyz completed successfully.
-37105 INFO: checking PKG
-37105 INFO: Building PKG because PKG-00.toc is non existent
-37105 INFO: Building PKG (CArchive) 按键精灵.pkg
-37136 INFO: Building PKG (CArchive) 按键精灵.pkg completed successfully.
-37137 INFO: Bootloader C:\Users\22576\AppData\Roaming\Python\Python314\site-packages\PyInstaller\bootloader\Windows-64bit-intel\runw.exe
-37137 INFO: checking EXE
-37138 INFO: Building EXE because EXE-00.toc is non existent
-37138 INFO: Building EXE from EXE-00.toc
-37138 INFO: Copying bootloader EXE to C:\Users\22576\Desktop\按键精灵-1.7.0-Windows打包\.pyinstaller\按键精灵\按键精灵.exe
-37145 INFO: Copying icon to EXE
-37152 INFO: Copying 0 resources to EXE
-37152 INFO: Embedding manifest in EXE
-37156 INFO: Appending PKG archive to EXE
-37162 INFO: Fixing EXE headers
-37251 INFO: Building EXE from EXE-00.toc completed successfully.
-37259 INFO: checking COLLECT
-37259 INFO: Building COLLECT because COLLECT-00.toc is non existent
-37260 INFO: Removing dir C:\Users\22576\Desktop\按键精灵-1.7.0-Windows打包\dist\按键精灵
-38229 INFO: Building COLLECT COLLECT-00.toc
-39659 INFO: Building COLLECT COLLECT-00.toc completed successfully.
-39673 INFO: Build complete! The results are available in: C:\Users\22576\Desktop\按键精灵-1.7.0-Windows打包\dist
+1117 INFO: Appending 'datas' from .spec
+1117 INFO: checking Analysis
+1118 INFO: Building Analysis because Analysis-00.toc is non existent
+1118 INFO: Looking for Python shared library...
+1118 INFO: Using Python shared library: C:\Python314\python314.dll
+1118 INFO: Running Analysis Analysis-00.toc
+1118 INFO: Target bytecode optimization level: 0
+1118 INFO: Initializing module dependency graph...
+1119 INFO: Initializing module graph hook caches...
+1134 INFO: Analyzing modules for base_library.zip ...
+2252 INFO: Processing standard module hook 'hook-math.py' from 'C:\\Users\\22576\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
+3184 INFO: Processing standard module hook 'hook-encodings.py' from 'C:\\Users\\22576\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
+5759 INFO: Processing standard module hook 'hook-difflib.py' from 'C:\\Users\\22576\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
+5776 INFO: Processing standard module hook 'hook-heapq.py' from 'C:\\Users\\22576\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
+5939 INFO: Processing standard module hook 'hook-pickle.py' from 'C:\\Users\\22576\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
+7851 INFO: Caching module dependency graph...
+7883 INFO: Analyzing C:\Users\22576\Desktop\按键精灵-1.7.0-Windows打包\main.py
+7929 INFO: Processing standard module hook 'hook-platform.py' from 'C:\\Users\\22576\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
+7983 INFO: Processing standard module hook 'hook-sysconfig.py' from 'C:\\Users\\22576\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
+8002 INFO: Processing standard module hook 'hook-_ctypes.py' from 'C:\\Users\\22576\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
+8015 INFO: Processing pre-find-module-path hook 'hook-tkinter.py' from 'C:\\Users\\22576\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks\\pre_find_module_path'
+8017 INFO: TclTkInfo: initializing cached Tcl/Tk info...
+8494 INFO: Processing standard module hook 'hook-_tkinter.py' from 'C:\\Users\\22576\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
+8595 INFO: Processing standard module hook 'hook-openpyxl.py' from 'C:\\Users\\22576\\AppData\\Roaming\\Python\\Python314\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+8736 INFO: Processing standard module hook 'hook-numpy.py' from 'C:\\Users\\22576\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
+9243 INFO: Processing pre-safe-import-module hook 'hook-typing_extensions.py' from 'C:\\Users\\22576\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+9245 INFO: SetuptoolsInfo: initializing cached setuptools info...
+10881 INFO: Processing standard module hook 'hook-webbrowser.py' from 'C:\\Users\\22576\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
+12525 INFO: Processing standard module hook 'hook-multiprocessing.util.py' from 'C:\\Users\\22576\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
+12659 INFO: Processing standard module hook 'hook-xml.py' from 'C:\\Users\\22576\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
+15249 INFO: Processing standard module hook 'hook-xml.etree.cElementTree.py' from 'C:\\Users\\22576\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
+15755 INFO: Processing standard module hook 'hook-PIL.py' from 'C:\\Users\\22576\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
+15925 INFO: Processing standard module hook 'hook-PIL.Image.py' from 'C:\\Users\\22576\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
+16675 INFO: Processing standard module hook 'hook-PIL.ImageFilter.py' from 'C:\\Users\\22576\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
+18062 INFO: Processing standard module hook 'hook-pynput.py' from 'C:\\Users\\22576\\AppData\\Roaming\\Python\\Python314\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+18515 INFO: Processing pre-safe-import-module hook 'hook-six.moves.py' from 'C:\\Users\\22576\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+19497 INFO: Analyzing hidden import 'pynput._info'
+19498 INFO: Analyzing hidden import 'pynput._util.darwin'
+19550 INFO: Analyzing hidden import 'pynput._util.darwin_vks'
+19552 INFO: Analyzing hidden import 'pynput._util.uinput'
+19556 INFO: Analyzing hidden import 'pynput._util.win32'
+19577 INFO: Analyzing hidden import 'pynput._util.xorg'
+19697 INFO: Analyzing hidden import 'pynput.keyboard._base'
+19717 INFO: Analyzing hidden import 'pynput.keyboard._darwin'
+19730 INFO: Analyzing hidden import 'pynput.keyboard._dummy'
+19731 INFO: Analyzing hidden import 'pynput.keyboard._uinput'
+19751 INFO: Analyzing hidden import 'pynput.keyboard._win32'
+19766 INFO: Analyzing hidden import 'pynput.keyboard._xorg'
+19803 INFO: Analyzing hidden import 'pynput.mouse._base'
+19812 INFO: Analyzing hidden import 'pynput.mouse._darwin'
+19825 INFO: Analyzing hidden import 'pynput.mouse._dummy'
+19826 INFO: Analyzing hidden import 'pynput.mouse._win32'
+19840 INFO: Analyzing hidden import 'pynput.mouse._xorg'
+19853 INFO: Processing module hooks (post-graph stage)...
+20303 INFO: Processing standard module hook 'hook-PIL.SpiderImagePlugin.py' from 'C:\\Users\\22576\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
+20430 INFO: Processing standard module hook 'hook-_tkinter.py' from 'C:\\Users\\22576\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks'
+20444 INFO: Performing binary vs. data reclassification (930 entries)
+20584 INFO: Looking for ctypes DLLs
+20674 INFO: Analyzing run-time hooks ...
+20679 INFO: Including run-time hook 'pyi_rth_inspect.py' from 'C:\\Users\\22576\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks\\rthooks'
+20682 INFO: Including run-time hook 'pyi_rth_pkgutil.py' from 'C:\\Users\\22576\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks\\rthooks'
+20684 INFO: Including run-time hook 'pyi_rth_multiprocessing.py' from 'C:\\Users\\22576\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks\\rthooks'
+20687 INFO: Including run-time hook 'pyi_rth__tkinter.py' from 'C:\\Users\\22576\\AppData\\Roaming\\Python\\Python314\\site-packages\\PyInstaller\\hooks\\rthooks'
+20727 INFO: Creating base_library.zip...
+20748 INFO: Looking for dynamic libraries
+21792 INFO: Extra DLL search directories (AddDllDirectory): ['C:\\Users\\22576\\AppData\\Roaming\\Python\\Python314\\site-packages\\numpy.libs']
+21792 INFO: Extra DLL search directories (PATH): []
+22267 INFO: Warnings written to C:\Users\22576\Desktop\按键精灵-1.7.0-Windows打包\.pyinstaller\按键精灵\warn-按键精灵.txt
+22331 INFO: Graph cross-reference written to C:\Users\22576\Desktop\按键精灵-1.7.0-Windows打包\.pyinstaller\按键精灵\xref-按键精灵.html
+22375 INFO: checking PYZ
+22375 INFO: Building PYZ because PYZ-00.toc is non existent
+22375 INFO: Building PYZ (ZlibArchive) C:\Users\22576\Desktop\按键精灵-1.7.0-Windows打包\.pyinstaller\按键精灵\PYZ-00.pyz
+22822 INFO: Building PYZ (ZlibArchive) C:\Users\22576\Desktop\按键精灵-1.7.0-Windows打包\.pyinstaller\按键精灵\PYZ-00.pyz completed successfully.
+22844 INFO: checking PKG
+22844 INFO: Building PKG because PKG-00.toc is non existent
+22844 INFO: Building PKG (CArchive) 按键精灵.pkg
+22861 INFO: Building PKG (CArchive) 按键精灵.pkg completed successfully.
+22862 INFO: Bootloader C:\Users\22576\AppData\Roaming\Python\Python314\site-packages\PyInstaller\bootloader\Windows-64bit-intel\runw.exe
+22862 INFO: checking EXE
+22862 INFO: Building EXE because EXE-00.toc is non existent
+22862 INFO: Building EXE from EXE-00.toc
+22862 INFO: Copying bootloader EXE to C:\Users\22576\Desktop\按键精灵-1.7.0-Windows打包\.pyinstaller\按键精灵\按键精灵.exe
+22869 INFO: Copying icon to EXE
+22876 INFO: Copying 0 resources to EXE
+22876 INFO: Embedding manifest in EXE
+22882 INFO: Appending PKG archive to EXE
+22888 INFO: Fixing EXE headers
+22971 INFO: Building EXE from EXE-00.toc completed successfully.
+22980 INFO: checking COLLECT
+22980 INFO: Building COLLECT because COLLECT-00.toc is non existent
+22981 INFO: Removing dir C:\Users\22576\Desktop\按键精灵-1.7.0-Windows打包\dist\按键精灵
+23769 INFO: Building COLLECT COLLECT-00.toc
+25037 INFO: Building COLLECT COLLECT-00.toc completed successfully.
+25055 INFO: Build complete! The results are available in: C:\Users\22576\Desktop\按键精灵-1.7.0-Windows打包\dist
