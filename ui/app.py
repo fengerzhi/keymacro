@@ -1634,10 +1634,12 @@ class MacroApp(tk.Tk):
             self.tree.item(iid, tags=tuple(tags))
 
     def _move_event(self, src: int, dst: int) -> bool:
-        """把第 src 条挪到第 dst 位（执行顺序变了，节奏不变）
+        """把第 src 条挪到第 dst 位：这一行带着自己的间隔一起走
 
-        时间槽留在原地：拖动只回答「第几步做什么」，不该把整段脚本的
-        时间轴一起搅乱，否则每挪一行后面所有的 t 都得跟着改。
+        时间轴由「间隔」累加得到，所以拖动只挪位置 + 间隔：被拖的那一行
+        保持它原来的间隔，落位后整表按间隔重新累加出时间。
+        以前是把 t 按行号钉死（拖动行会捡走目标行的时间/间隔），
+        看上去就是「时间、间隔不会跟着动」。
         """
         evs = self.script.events
         n = len(evs)
@@ -1647,11 +1649,11 @@ class MacroApp(tk.Tk):
         if dst == src:
             return False
         self._snapshot()
-        slots = [e.t for e in evs]
+        gaps = self.script.gaps()
         ev = evs.pop(src)
         evs.insert(dst, ev)
-        for e, t in zip(evs, slots):
-            e.t = t
+        gaps.insert(dst, gaps.pop(src))
+        self.script.retime_from_gaps(gaps)
         if self._folded:
             self._folded.clear()            # 折叠位置按行号记的，重排后失效
         self._refresh_list()
@@ -2656,9 +2658,10 @@ class MacroApp(tk.Tk):
         if ms is None or ms == ev.t:
             return
         self._snapshot()
-        delta = ms - ev.t
-        for e in evs[idx:]:
-            e.t += delta
+        # 改绝对时间 = 改这一行的间隔，再按间隔逐行累加出后面的时间
+        gaps = self.script.gaps()
+        gaps[idx] = max(0, gaps[idx] + (ms - ev.t))
+        self.script.retime_from_gaps(gaps)
         self._refresh_list()
         self.tree.see(str(idx))
         self.tree.selection_set(str(idx))
@@ -2674,13 +2677,13 @@ class MacroApp(tk.Tk):
         return max(0, evs[idx].t - prev_t)
 
     def edit_gap(self) -> None:
-        """修改选中行的间隔：该行及其后所有步骤整体平移，后续间隔不变"""
+        """修改选中行的间隔：改完按间隔逐行累加，后面各行时间自动跟上"""
         idx = self._selected_index()
         if idx is None:
             messagebox.showinfo("提示", "请先在列表里选中一行。")
             return
-        evs = self.script.events
-        old = self._gap_of(idx)
+        gaps = self.script.gaps()
+        old = gaps[idx] if 0 <= idx < len(gaps) else 0
         ms = simpledialog.askinteger(
             "修改间隔",
             f"当前间隔 {old} ms（{old / 1000:.2f} 秒）。\n"
@@ -2690,14 +2693,13 @@ class MacroApp(tk.Tk):
         if ms is None or ms == old:
             return
         self._snapshot()
-        delta = ms - old
-        for e in evs[idx:]:
-            e.t += delta
-        self.script.retime()
+        gaps[idx] = ms
+        self.script.retime_from_gaps(gaps)      # 时间列从这一行起逐行累加
         self._refresh_list()
         self.tree.see(str(idx))
         self.tree.selection_set(str(idx))
-        self._set_status(f"第 {idx + 1} 行间隔已设为 {ms} ms（{ms / 1000:.2f} 秒）")
+        self._set_status(f"第 {idx + 1} 行间隔已设为 {ms} ms"
+                         f"（{ms / 1000:.2f} 秒），后面各步时间已重新累加")
 
     def set_gap_batch(self) -> None:
         """统一设置间隔：作用于选中行（未选则全部）"""
@@ -2705,24 +2707,23 @@ class MacroApp(tk.Tk):
         if not evs:
             return
         idxs = self._selected_indices() or list(range(len(evs)))
+        gaps = self.script.gaps()
         ms = simpledialog.askinteger(
             "统一间隔",
             f"把选中的 {len(idxs)} 行的间隔统一设为（毫秒）：\n"
             "选中的行会用这个间隔，未选中的行保持原间隔。",
-            initialvalue=self._gap_of(idxs[0]), minvalue=0, parent=self)
+            initialvalue=gaps[idxs[0]] if idxs[0] < len(gaps) else 0,
+            minvalue=0, parent=self)
         if ms is None:
             return
         self._snapshot()
-        gaps = [self._gap_of(i) for i in range(len(evs))]
         for i in idxs:
-            gaps[i] = ms
-        t = gaps[0]
-        evs[0].t = t
-        for i in range(1, len(evs)):
-            t += gaps[i]
-            evs[i].t = t
+            if 0 <= i < len(gaps):
+                gaps[i] = ms
+        self.script.retime_from_gaps(gaps)
         self._refresh_list()
-        self._set_status(f"已把 {len(idxs)} 行的间隔设为 {ms} ms（{ms / 1000:.2f} 秒）")
+        self._set_status(f"已把 {len(idxs)} 行的间隔设为 {ms} ms"
+                         f"（{ms / 1000:.2f} 秒），时间已重新累加")
 
     def add_comment(self) -> None:
         text = simpledialog.askstring("添加注释", "注释内容：", parent=self)

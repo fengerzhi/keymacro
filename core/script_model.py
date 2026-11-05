@@ -412,6 +412,28 @@ class Script:
             if self.events[i].t < self.events[i - 1].t:
                 self.events[i].t = self.events[i - 1].t
 
+    def gaps(self) -> list[int]:
+        """每一行与上一行的间隔（毫秒）；首行相对开始 0"""
+        out: list[int] = []
+        prev = 0
+        for e in self.events:
+            out.append(max(0, e.t - prev))
+            prev = e.t
+        return out
+
+    def retime_from_gaps(self, gaps: list[int] | None = None) -> None:
+        """按间隔逐行累加，重算每一行的 t
+
+        时间轴的正主是「间隔」，绝对时间只是它的累加结果。改间隔、拖行之后
+        统一走这里，时间列才会跟着一行行往上加，而不是各算各的。
+        """
+        g = list(gaps) if gaps is not None else self.gaps()
+        t = 0
+        for i, e in enumerate(self.events):
+            step = max(0, int(g[i])) if i < len(g) else 0
+            t += step
+            e.t = t
+
     def validate_structure(self) -> list[str]:
         """检查 loop / if 块配对等结构问题，返回警告列表"""
         warnings: list[str] = []

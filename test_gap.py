@@ -96,6 +96,27 @@ check("统一间隔后时间轴单调且总时长正确",
           200 + before_gaps[2] + before_gaps[4] + before_gaps[5]],
       [e.t for e in app.script.events])
 
+# ---------------------------------------------------------------- 拖动排序
+# 期望：被拖的行带着自己的间隔走，落位后整表时间按间隔重新累加
+app.script = Script(events=[
+    Event(t=t, type="mousemove", x=100 + i, y=20)
+    for i, t in enumerate((0, 500, 600, 700))])
+app._refresh_list()
+app.update()
+app._move_event(1, 0)          # 第 2 行（间隔 500ms）拖到最前
+app.update()
+
+check("拖动后顺序：第 2 行排到最前",
+      [e.x for e in app.script.events] == [101, 100, 102, 103],
+      [e.x for e in app.script.events])
+check("被拖的行保留自己的间隔（500ms）", app._gap_of(0) == 500, app._gap_of(0))
+check("时间按间隔重新累加",
+      [e.t for e in app.script.events] == [500, 500, 600, 700],
+      [e.t for e in app.script.events])
+check("拖动后表格时间列同步",
+      app.tree.item("0", "values")[1] == "0.50s",
+      app.tree.item("0", "values"))
+
 print("\n" + "=" * 62)
 print(f"通过 {len(PASS)} 项，失败 {len(FAIL)} 项")
 if FAIL:
