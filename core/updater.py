@@ -24,6 +24,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import os
 import re
@@ -39,11 +40,12 @@ import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 
-APP_VERSION = "1.8.3"
+APP_VERSION = "1.8.4"
 
 # 当前版本的更新说明：生成升级包时写入 notes.txt，升级窗口会自动显示
-RELEASE_NOTES = """v1.8.3
-- 插入「找图点击」「验证码识别」时默认留 0.5 秒前置间隔（以前只有 0.1 秒，界面还没稳、图片还没加载完就执行，常常找不到图或识别失败）；其它动作仍然是 0.1 秒"""
+RELEASE_NOTES = """v1.8.4
+- 修复升级时下载升级包失败的问题：以前一次把整包读进内存，网络被掐断一次就整体失败（WinError 10054 远程主机强迫关闭了一个现有的连接），重试也从 0 开始；现在改成流式写入 + 断点续传，断线后从断点接着下，最多重试 8 次
+- 下载完成会校验长度，不会再把半包当成完整包去解压"""
 
 
 
@@ -430,17 +432,69 @@ def fetch_manifest(url: str | None = None) -> dict:
     return data
 
 
-def download_package(url: str, dest_dir: str | None = None) -> Path:
-    """下载升级包到临时目录，返回 zip 路径"""
+def download_package(url: str, dest_dir: str | None = None,
+                     progress=None) -> Path:
+    """下载升级包到临时目录，返回 zip 路径
+
+    为什么要自己写断点续传
+    ─────────────────────────────────────────
+    升级包 25 MB 上下，国内直连 GitHub 的 objects.githubusercontent.com
+    经常被中途掐断（"WinError 10054 远程主机强迫关闭了一个现有的连接"）。
+    原来是一次 read() 读完整包再落盘，断一次就整体失败，重试还从 0 开始。
+
+    现在改成流式写入 + Range 续传：连接断了就从 .part 的断点接着下，
+    最多 8 轮（间隔 1/2/4/8 秒退避）。只要网络不是彻底不通，就能下完。
+    """
     dest = Path(dest_dir) if dest_dir else Path(tempfile.gettempdir())
     dest.mkdir(parents=True, exist_ok=True)
-    name = "keymacro_update.zip"
-    tmp = dest / (name + ".part")
-    raw = _http_get(url, DOWNLOAD_TIMEOUT)
-    tmp.write_bytes(raw)
-    final = dest / name
-    shutil.move(str(tmp), str(final))
-    return final
+    final = dest / "keymacro_update.zip"
+    # .part 名字带 URL 指纹：换了版本/换了源，不会把旧残片接在新包前面
+    key = hashlib.sha1(url.encode("utf-8")).hexdigest()[:10]
+    part = dest / f"keymacro_update.{key}.part"
+    if final.exists():
+        final.unlink()
+
+    last: Exception | None = None
+    for attempt in range(1, 9):
+        have = part.stat().st_size if part.exists() else 0
+        headers = {"User-Agent": f"KeyMacro/{APP_VERSION}"}
+        if have:
+            headers["Range"] = f"bytes={have}-"
+        try:
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=DOWNLOAD_TIMEOUT) as resp:
+                resumed = have > 0 and resp.status == 206
+                length = int(resp.headers.get("Content-Length") or 0)
+                total = length + have if resumed else length
+                if not resumed:
+                    have = 0                       # 服务器不认 Range，只能从头写
+                with open(part, "ab" if resumed else "wb") as f:
+                    while True:
+                        chunk = resp.read(256 * 1024)
+                        if not chunk:
+                            break
+                        f.write(chunk)
+                        have += len(chunk)
+                        if progress:
+                            try:
+                                progress(have, total)
+                            except Exception:      # noqa: BLE001
+                                pass
+            size = part.stat().st_size
+            if total and size < total:
+                raise IOError(f"下载不完整：{size}/{total} 字节")
+            shutil.move(str(part), str(final))
+            return final
+        except Exception as exc:                    # noqa: BLE001
+            last = exc
+            if attempt < 8:
+                time.sleep(min(2 ** (attempt - 1), 8))
+
+    raise RuntimeError(
+        f"下载升级包失败（已重试 8 次）：{last}\n\n"
+        "到 GitHub 的连接不太稳定。可以改用「升级文件夹」（把升级包放到"
+        "本地文件夹再指定路径），或者挂上代理后重试。"
+    ) from last
 
 
 # ================================================================ 应用升级

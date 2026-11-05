@@ -38,7 +38,7 @@ for _stream in (sys.stdout, sys.stderr):
 
 APP_NAME = "按键精灵"
 APP_ID = "KeyMacro"
-DEFAULT_VERSION = "1.8.3"
+DEFAULT_VERSION = "1.8.4"
 
 
 def app_version() -> str:
