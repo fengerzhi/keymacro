@@ -19,6 +19,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 import os
 import time
@@ -199,6 +200,9 @@ class MacroApp(tk.Tk):
         # ---- 录制模式与追加偏移
         self._record_mode = "replace"
         self._record_offset = 0
+        # 追加录制时先存一份原有事件：录制中预览是「原有 + 新增」，
+        # 停止后要用 base + 新录 重建（不能直接用 recorder.events 覆盖）
+        self._record_base: list[Event] = []
 
         try:
             self.cfg = load_config()
@@ -2047,9 +2051,11 @@ class MacroApp(tk.Tk):
             self.filter_var.set("")
             self._filter_text = ""
         if self._record_mode == "append" and self.script.events:
+            self._record_base = list(self.script.events)
             self._record_offset = self.script.duration_ms + 300
             self._backup_before_append()
         else:
+            self._record_base = []
             self.script.events.clear()
             self._record_offset = 0
         self._last_row_count = len(self.script.events)
@@ -2086,14 +2092,19 @@ class MacroApp(tk.Tk):
         self.after(250, self._tick_recording)
 
     def _on_record_event(self, ev: Event) -> None:
-        """实时预览：录制中每产生一条事件就追加到列表"""
+        """实时预览：录制中每产生一条事件就追加到列表
+
+        加偏移要用副本：recorder 里那份必须保持「从 0 开始」的原始时间，
+        停止录制时还会按统一基准重排一次，改原件等于偏移加两遍。
+        """
         if not self.recorder.running:
             return
-        if getattr(self, "_record_offset", 0):
-            ev.t += self._record_offset          # 追加录制：整体接在已有末尾之后
+        item = copy.copy(ev)
+        if self._record_offset:
+            item.t += self._record_offset        # 追加录制：整体接在已有末尾之后
         i = len(self.script.events)
-        self.script.events.append(ev)
-        self._insert_event_row(i, ev)
+        self.script.events.append(item)
+        self._insert_event_row(i, item)
         self.tree.yview_moveto(1.0)
 
     def _ripple_at(self, x: int, y: int, button: str = "left") -> None:
@@ -2208,7 +2219,10 @@ class MacroApp(tk.Tk):
         if self.recorder.running:
             self.recorder.stop()
         self.recorder.events.clear()
-        self.script.events.clear()
+        # 追加录制时「放弃」只该丢新录的那段，原有事件要还原回去
+        self.script.events = list(self._record_base)
+        self._record_base = []
+        self._record_offset = 0
         self._hide_hud()
         self.deiconify()
         self.lift()
@@ -2253,8 +2267,18 @@ class MacroApp(tk.Tk):
             return
         before = len(self.recorder.events)
         self.recorder.stop()
-        self.script.events = list(self.recorder.events)
-        after = len(self.script.events)
+        new = list(self.recorder.events)
+        after = len(new)
+        # 追加录制：新录的事件整体后移到原有末尾之后，再拼回去。
+        # 之前这里直接 self.script.events = recorder.events，等于把原有脚本
+        # 整段丢掉、新事件又从 0 开始，所以「追加」看起来像清空重录。
+        if self._record_offset:
+            for e in new:
+                e.t += self._record_offset
+        base = self._record_base
+        self._record_base = []
+        self.script.events = base + new
+        self._record_offset = 0
         self._hide_hud()
         self.deiconify()
         self.lift()
