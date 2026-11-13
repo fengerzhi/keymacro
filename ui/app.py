@@ -146,6 +146,221 @@ class _RecordModeDialog(tk.Toplevel):
         self.destroy()
 
 
+class _WebTableDialog(tk.Toplevel):
+    """抓取网页表格：复制 → 解析 → 预览 → 存 CSV / 设为数据源
+
+    为什么是「复制」而不是「填网址去抓」
+    ─────────────────────────────────────
+    合同/订单这种后台都是登录后由 JS 渲染的，直接请求网址拿到的 HTML
+    里没有数据。浏览器已经把这些做完了：选中表格 Ctrl+C，剪贴板里就是
+    制表符分隔的纯文本。这里负责把文本里的表格块找出来、解析成行列。
+    """
+
+    def __init__(self, master, purpose: str = "command",
+                 default_dir: str = ""):
+        super().__init__(master)
+        self.title("抓取网页表格")
+        self.result: dict | None = None
+        self.table = None
+        self.csv_path = ""
+        self.auto_used = False
+        self._default_dir = default_dir or str(Path.home())
+        self.resizable(True, True)
+        self.transient(master)
+
+        frm = ttk.Frame(self, padding=12)
+        frm.pack(fill="both", expand=True)
+
+        ttk.Label(
+            frm,
+            text="① 在网页里用鼠标从表格左上角拖选到右下角（或直接点下面的"
+                 "「自动复制」）\n② 按 Ctrl+C  ③ 点「读取剪贴板」",
+            justify="left", foreground="#555").pack(anchor="w")
+
+        # ---- 操作按钮 ----
+        bar = ttk.Frame(frm)
+        bar.pack(fill="x", pady=(8, 4))
+        ttk.Button(bar, text="📋 读取剪贴板",
+                   command=self._read_clipboard).pack(side="left")
+        ttk.Button(bar, text="⏱ 自动复制（3 秒）",
+                   command=lambda: self._auto_copy(3)).pack(side="left", padx=(6, 0))
+        ttk.Button(bar, text="💾 保存为 CSV…",
+                   command=self._save_csv).pack(side="left", padx=(6, 0))
+
+        self.status_var = tk.StringVar(value="还没有数据")
+        self._status_lbl = ttk.Label(frm, textvariable=self.status_var,
+                                     foreground="#0a7")
+        self._status_lbl.pack(anchor="w", pady=(2, 6))
+
+        # ---- 预览 ----
+        box = ttk.Frame(frm)
+        box.pack(fill="both", expand=True)
+        self.text = tk.Text(box, height=12, width=86, wrap="none",
+                            font=("Consolas", 9))
+        ysb = ttk.Scrollbar(box, orient="vertical", command=self.text.yview)
+        xsb = ttk.Scrollbar(box, orient="horizontal", command=self.text.xview)
+        self.text.configure(yscrollcommand=ysb.set, xscrollcommand=xsb.set)
+        self.text.grid(row=0, column=0, sticky="nsew")
+        ysb.grid(row=0, column=1, sticky="ns")
+        xsb.grid(row=1, column=0, sticky="ew")
+        box.rowconfigure(0, weight=1)
+        box.columnconfigure(0, weight=1)
+        self.text.configure(state="disabled")
+
+        # ---- 用途 ----
+        opt = ttk.Frame(frm)
+        opt.pack(fill="x", pady=(8, 0))
+        self.insert_var = tk.BooleanVar(value=(purpose != "source"))
+        self.source_var = tk.BooleanVar(value=(purpose == "source"))
+        ttk.Checkbutton(opt, text="插入一条「抓取网页表格」指令到脚本",
+                        variable=self.insert_var).pack(anchor="w")
+        ttk.Checkbutton(opt, text="把抓到的数据设为脚本的数据源（CSV，按行取数）",
+                        variable=self.source_var).pack(anchor="w")
+        self.header_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(opt, text="第一行是表头（列名）",
+                        variable=self.header_var,
+                        command=self._read_clipboard).pack(anchor="w")
+
+        # ---- 底部按钮 ----
+        btns = ttk.Frame(frm)
+        btns.pack(fill="x", pady=(10, 0))
+        ttk.Button(btns, text="确定", width=10,
+                   command=self._ok).pack(side="right", padx=(6, 0))
+        ttk.Button(btns, text="取消", width=10,
+                   command=self.destroy).pack(side="right")
+
+        self.bind("<Escape>", lambda e: self.destroy())
+        self.update_idletasks()
+        try:
+            x = master.winfo_rootx() + (master.winfo_width() - self.winfo_width()) // 2
+            y = master.winfo_rooty() + 60
+            self.geometry(f"+{max(0, x)}+{max(0, y)}")
+        except Exception:                      # noqa: BLE001
+            pass
+        self.grab_set()
+
+    # ------------------------------------------------------------ 读剪贴板
+    def _read_clipboard(self) -> None:
+        from core import web_table
+
+        table, _raw, err = web_table.grab_from_clipboard(
+            has_header=bool(self.header_var.get()))
+        if table is None:
+            self.table = None
+            self._set_preview("")
+            self._set_status(err, ok=False)
+            return
+        self.table = table
+        self._set_preview(web_table.preview(table))
+        self._set_status(f"共 {table.n_rows} 行 × {len(table.headers)} 列")
+
+    def _set_preview(self, content: str) -> None:
+        self.text.configure(state="normal")
+        self.text.delete("1.0", "end")
+        self.text.insert("1.0", content)
+        self.text.configure(state="disabled")
+
+    def _set_status(self, msg: str, ok: bool = True) -> None:
+        self.status_var.set(msg)
+        try:
+            self._status_lbl.configure(foreground="#0a7" if ok else "#c00")
+        except Exception:                      # noqa: BLE001
+            pass
+
+    # ------------------------------------------------------------ 自动复制
+    def _auto_copy(self, seconds: int = 3) -> None:
+        """倒计时后自己发 Ctrl+A/Ctrl+C：先把窗口藏起来，好让浏览器拿到焦点"""
+        from core import web_table
+
+        self.auto_used = True
+        self._set_status(f"{seconds} 秒后自动复制，请切到网页…")
+        self.withdraw()
+
+        def tick(left: int) -> None:
+            if left > 0:
+                self.after(1000, lambda: tick(left - 1))
+                return
+            ok = web_table.send_copy()
+            self.after(500, lambda: done(ok))
+
+        def done(ok: bool) -> None:
+            try:
+                self.deiconify()
+                self.lift()
+                self.grab_set()
+            except Exception:                  # noqa: BLE001
+                pass
+            if not ok:
+                self._set_status("键盘注入失败：可以手动 Ctrl+C 再点「读取剪贴板」",
+                                 ok=False)
+                return
+            self._read_clipboard()
+
+        self.after(1000, lambda: tick(seconds - 1))
+
+    # ------------------------------------------------------------ 保存
+    def _save_csv(self) -> bool:
+        from core import web_table
+
+        if self.table is None:
+            messagebox.showinfo("提示", "先读取表格，再保存。", parent=self)
+            return False
+        path = filedialog.asksaveasfilename(
+            parent=self, title="保存为 CSV",
+            defaultextension=".csv",
+            initialdir=self._default_dir,
+            initialfile=f"网页表格_{time.strftime('%Y%m%d_%H%M')}.csv",
+            filetypes=[("CSV 数据（Excel 可直接打开）", "*.csv")])
+        if not path:
+            return False
+        try:
+            p = web_table.save_csv(self.table, path)
+        except Exception as exc:               # noqa: BLE001
+            messagebox.showerror("保存失败", str(exc), parent=self)
+            return False
+        self.csv_path = str(p)
+        self._set_status(f"已保存：{p}")
+        return True
+
+    def _auto_save(self) -> bool:
+        """「设为数据源」但没手动存过：按默认名存到默认目录"""
+        from core import web_table
+
+        if self.csv_path:
+            return True
+        if self.table is None:
+            return False
+        name = f"网页表格_{time.strftime('%Y%m%d_%H%M%S')}.csv"
+        try:
+            p = web_table.save_csv(self.table, str(Path(self._default_dir) / name))
+        except Exception as exc:               # noqa: BLE001
+            messagebox.showerror("保存失败", str(exc), parent=self)
+            return False
+        self.csv_path = str(p)
+        return True
+
+    # ------------------------------------------------------------ 确定
+    def _ok(self) -> None:
+        if self.table is None:
+            if self.insert_var.get() or self.source_var.get():
+                messagebox.showinfo(
+                    "还没有数据",
+                    "先用「读取剪贴板」或「自动复制」把表格抓下来。", parent=self)
+                return
+            self.destroy()
+            return
+        if self.source_var.get() and not self._auto_save():
+            return
+        self.result = {
+            "mode": "auto" if self.auto_used else "manual",
+            "path": self.csv_path,
+            "insert": bool(self.insert_var.get()),
+            "source": bool(self.source_var.get()),
+            "rows": self.table.n_rows,
+        }
+        self.destroy()
+
+
 class MacroApp(tk.Tk):
     # 开始录制时对已有脚本的处理方式（工具栏下拉用）
     _REC_MODE_LABELS = {"ask": "询问我", "replace": "总是清空重录",
@@ -1531,6 +1746,7 @@ class MacroApp(tk.Tk):
         "if": "cond", "else": "cond", "if_end": "cond",
         "delay": "wait", "wait": "wait",
         "findimg": "findimg", "find_image": "findimg", "ocr": "findimg",
+        "grab_table": "findimg",
         "comment": "note",
     }
 
@@ -1701,6 +1917,7 @@ class MacroApp(tk.Tk):
                 ("结束判断", self._cmd_if_end),
                 ("找图点击", self._cmd_find_image),
                 ("验证码识别", self._cmd_ocr),
+                ("抓取网页表格", self._cmd_grab_table),
                 ("注释", self._cmd_comment),
             ]),
         ]
@@ -1816,6 +2033,10 @@ class MacroApp(tk.Tk):
             row=0, column=1, pady=2, sticky="ew")
         ttk.Button(ds, text="📂", width=3,
                    command=self._pick_data_file).grid(row=0, column=2, padx=(4, 0))
+        # 直接从网页表格生成数据源：不用先手工存 CSV 再回来选文件
+        ttk.Button(ds, text="🌐", width=3,
+                   command=self._grab_table_for_source).grid(
+            row=0, column=3, padx=(4, 0))
 
         ttk.Label(ds, text="取数模式").grid(row=1, column=0, sticky="w", pady=2)
         self.data_mode_var = tk.StringVar(value=self.script.data_mode)
@@ -2925,6 +3146,20 @@ class MacroApp(tk.Tk):
             if ep is not None:
                 ev.text = ep.strip()
             self._refresh_list()
+        elif ev.type == "grab_table":
+            auto = messagebox.askyesno(
+                "编辑抓取网页表格",
+                "抓取前自动发送 Ctrl+A / Ctrl+C 吗？\n\n"
+                "是 = 自动复制（回放时程序自己选中并复制整个页面）\n"
+                "否 = 只读剪贴板（你先手动复制好表格）", parent=self)
+            ev.key = "auto" if auto else "manual"
+            path = simpledialog.askstring(
+                "保存位置",
+                "存到哪个 CSV：\n（留空 = 只抓不存文件）",
+                initialvalue=ev.text or "", parent=self)
+            if path is not None:
+                ev.text = path.strip()
+            self._refresh_list()
         else:
             messagebox.showinfo("提示",
                                 f"{ev.detail()}\n\n该类型暂无专门编辑器，"
@@ -2991,7 +3226,7 @@ class MacroApp(tk.Tk):
         self._snapshot()
         # 找图 / 验证码识别要多等一会儿：界面还没稳、图片还没加载、OCR 还要走网络，
         # 紧贴着上一步执行基本必失败，所以默认留 500ms；其它动作保持 100ms
-        gap = 500 if ev.type in ("find_image", "ocr") else 100
+        gap = 500 if ev.type in ("find_image", "ocr", "grab_table") else 100
         if idx is None:
             ev.t = self.script.duration_ms + gap if self.script.events else 0
             i = self.script.insert_sorted(ev)
@@ -3881,6 +4116,47 @@ class MacroApp(tk.Tk):
             return ev
 
         self._pick_and_fill(3, build)
+
+    def _cmd_grab_table(self) -> None:
+        """抓取网页表格 → 可插入一条指令（回放时自动抓并存 CSV）"""
+        dlg = _WebTableDialog(self, purpose="command",
+                              default_dir=self._default_save_dir())
+        self.wait_window(dlg)
+        r = dlg.result
+        if not r:
+            self._insert_index = None
+            return
+        if not r["insert"]:
+            # 只抓了数据、不想插指令：若勾了数据源由调用方处理，这里不落指令
+            self._insert_index = None
+            return
+        ev = Event(t=0, type="grab_table", text=r["path"],
+                   key=r["mode"], dx=600)
+        self._append(ev)
+        msg = "已插入「抓取网页表格」"
+        if r["rows"]:
+            msg += f"（{r['rows']} 行）"
+        if r["path"]:
+            msg += f"，回放时会存到 {os.path.basename(r['path'])}"
+        self._set_status(msg)
+
+    def _grab_table_for_source(self) -> None:
+        """数据源面板的 🌐：抓网页表格 → 存 CSV → 直接设为数据源"""
+        dlg = _WebTableDialog(self, purpose="source",
+                              default_dir=self._default_save_dir())
+        self.wait_window(dlg)
+        r = dlg.result
+        if not r:
+            return
+        if not r["path"]:
+            self._set_status("没有保存 CSV，数据源未改动")
+            return
+        self.data_var.set(r["path"])
+        if self.data_mode_var.get() == "off":
+            self.data_mode_var.set("per_loop")
+        self._refresh_data_hint()
+        self._set_status(f"已设为数据源：{os.path.basename(r['path'])}"
+                         f"（{r['rows']} 行，按行取数）")
 
     def _pick_for_existing(self, ev: Event) -> None:
         """给已有事件重新框选区域（验证码识别编辑用）"""

@@ -237,6 +237,11 @@ class Event:
             else:
                 text += " → 输入到当前焦点"
             return text
+        if ty == "grab_table":
+            mode = "自动复制" if (self.key or "auto") == "auto" else "读剪贴板"
+            target = (self.text or "").rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
+            text = f"{prefix}抓取网页表格（{mode}）"
+            return f"{text} → {target}" if target else f"{text}（不存文件）"
         if ty == "comment":
             return f"# {(self.text or '')[:30]}"
         return ty

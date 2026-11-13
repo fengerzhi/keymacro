@@ -99,6 +99,11 @@ class Player:
         self.last_image_pos: tuple[int, int] | None = None   # 最近一次找图落点
         self.last_ocr_text: str = ""          # 最近一次识别出的验证码
         self.last_ocr_reason: str = ""        # 识别失败的具体原因
+        # 抓网页表格的结果（行列数 / 存到哪 / 失败原因）
+        self.last_table_rows: int = 0
+        self.last_table_cols: int = 0
+        self.last_table_path: str = ""
+        self.last_table_reason: str = ""
         # 点击通知：回放时给界面画涟漪用，签名 (x, y, button)
         self.on_action: Callable[[int, int, str], None] | None = None
         self.last_shot: str | None = None
@@ -403,6 +408,11 @@ class Player:
                         msg += f" → 点({pos[0]},{pos[1]})"
                     if ev.type == "ocr" and self.last_ocr_text:
                         msg += f" → 识别「{self.last_ocr_text}」"
+                    if ev.type == "grab_table" and self.last_table_rows:
+                        msg += (f" → {self.last_table_rows} 行 × "
+                                f"{self.last_table_cols} 列")
+                        if self.last_table_path:
+                            msg += f" → {self.last_table_path}"
                     logger.add("ok", msg, step=i + 1, lap=lap,
                                elapsed_ms=elapsed)
                     if ev.type == "find_image":
@@ -499,6 +509,8 @@ class Player:
                     last = "未命中（找图失败或条件不满足）"
                     if ev.type == "find_image" and getattr(self, "last_image_reason", ""):
                         last = f"未命中（{self.last_image_reason}）"
+                    elif ev.type == "grab_table" and self.last_table_reason:
+                        last = f"抓取失败（{self.last_table_reason}）"
                     self.last_failure = (ev.type, ev.detail())
                 else:
                     return "ok" if k == 0 else f"ok（第 {k+1} 次重试成功）"
@@ -595,6 +607,9 @@ class Player:
 
         elif ty == "ocr":
             return self._do_ocr(ev)
+
+        elif ty == "grab_table":
+            return self._do_grab_table(ev, script)
 
         elif ty in ("comment", "loop_end"):
             pass                        # 注释与块尾不执行
@@ -727,94 +742,17 @@ class Player:
                     pass                # 无法输出的字符（emoji 等）跳过
             time.sleep(0.008)
 
-    @staticmethod
-    def _clip_api():
-        """配置好参数字典的剪贴板 API
-
-        64 位下不声明 restype，HGLOBAL / 指针会被截断成 32 位，
-        GlobalLock 拿到的地址是坏的，SetClipboardData 静默失败。
-        """
-        import ctypes
-        from ctypes import wintypes
-
-        u = ctypes.windll.user32
-        k = ctypes.windll.kernel32
-        u.OpenClipboard.argtypes = [wintypes.HWND]
-        u.OpenClipboard.restype = wintypes.BOOL
-        u.EmptyClipboard.restype = wintypes.BOOL
-        u.CloseClipboard.restype = wintypes.BOOL
-        u.GetClipboardData.argtypes = [wintypes.UINT]
-        u.GetClipboardData.restype = wintypes.HANDLE
-        u.SetClipboardData.argtypes = [wintypes.UINT, wintypes.HANDLE]
-        u.SetClipboardData.restype = wintypes.HANDLE
-        k.GlobalAlloc.argtypes = [wintypes.UINT, ctypes.c_size_t]
-        k.GlobalAlloc.restype = wintypes.HANDLE
-        k.GlobalLock.argtypes = [wintypes.HANDLE]
-        k.GlobalLock.restype = ctypes.c_void_p
-        k.GlobalUnlock.argtypes = [wintypes.HANDLE]
-        k.GlobalUnlock.restype = wintypes.BOOL
-        return u, k
-
-    @staticmethod
-    def _open_clipboard(u) -> bool:
-        """剪贴板常被别的程序占着，重试几次再放弃"""
-        for _ in range(4):
-            if u.OpenClipboard(None):
-                return True
-            time.sleep(0.03)
-        return False
-
+    # 剪贴板读写统一放在 core/clipboard.py（抓网页表格也要用同一份实现，
+    # 两处各写一遍迟早会漂移）。这里保留同名方法，内部直接转调。
     def _clip_get(self) -> str:
         """读剪贴板里的文本（读不到返回空串）"""
-        try:
-            import ctypes
-            CF_UNICODETEXT = 13
-            u, k = self._clip_api()
-            if not self._open_clipboard(u):
-                return ""
-            try:
-                h = u.GetClipboardData(CF_UNICODETEXT)
-                if not h:
-                    return ""
-                p = k.GlobalLock(h)
-                if not p:
-                    return ""
-                try:
-                    return ctypes.wstring_at(p)
-                finally:
-                    k.GlobalUnlock(h)
-            finally:
-                u.CloseClipboard()
-        except Exception:
-            return ""
+        from . import clipboard
+        return clipboard.get_text()
 
     def _clip_set(self, text: str) -> bool:
         """把文本写进剪贴板（成功返回 True）"""
-        try:
-            import ctypes
-            CF_UNICODETEXT = 13
-            GMEM_MOVEABLE = 0x0002
-            data = text.encode("utf-16-le") + b"\x00\x00"
-            u, k = self._clip_api()
-            if not self._open_clipboard(u):
-                return False
-            try:
-                u.EmptyClipboard()
-                h = k.GlobalAlloc(GMEM_MOVEABLE, len(data))
-                if not h:
-                    return False
-                p = k.GlobalLock(h)
-                if not p:
-                    return False
-                ctypes.memmove(p, data, len(data))
-                k.GlobalUnlock(h)
-                if not u.SetClipboardData(CF_UNICODETEXT, h):
-                    return False
-            finally:
-                u.CloseClipboard()
-            return True
-        except Exception:
-            return False
+        from . import clipboard
+        return clipboard.set_text(text)
 
     def _paste_text(self, text: str, restore: bool = True) -> bool:
         """把 text 放进剪贴板后 Ctrl+V 粘贴；成功返回 True
@@ -971,6 +909,49 @@ class Player:
         if not self._paste_text(code_text):
             self._type_text(code_text)          # 剪贴板不可用时退回逐字
         self.last_ocr_text = code_text
+        return True
+
+    def _do_grab_table(self, ev: Event, script: Script | None = None) -> bool:
+        """抓取网页表格（合同/订单/客户列表这类）
+
+          1. auto 模式：先给前台窗口发 Ctrl+A / Ctrl+C（浏览器自己把表格
+             转成制表符分隔的文本放进剪贴板，登录态、JS 渲染都不用管）
+          2. 从剪贴板里挑出最大的表格块，解析成表头 + 数据行
+          3. ev.text 有值就存成 CSV（utf-8-sig，Excel 直接双击能开）
+
+        失败返回 False 触发重试：抓不到表格多半是页面还没加载完。
+        """
+        from . import web_table
+
+        self.last_table_rows = 0
+        self.last_table_cols = 0
+        self.last_table_path = ""
+        self.last_table_reason = ""
+
+        if (ev.key or "auto").lower() == "auto":
+            # 先留出一点时间给页面渲染/滚动到位，再去选中复制
+            self._sleep(ev.dx if ev.dx is not None else 600, 0)
+            if not web_table.send_copy(controller=self._kbd):
+                self.last_table_reason = "没能给网页发送 Ctrl+A/Ctrl+C（键盘注入失败）"
+                self.last_failure = ("grab_table", ev.detail())
+                return False
+            self._sleep(300, 0)             # 等浏览器把内容写进剪贴板
+
+        table, _raw, err = web_table.grab_from_clipboard()
+        if table is None:
+            self.last_table_reason = err
+            self.last_failure = ("grab_table", ev.detail())
+            return False
+
+        self.last_table_rows = table.n_rows
+        self.last_table_cols = len(table.headers)
+        path = self._resolve_text((ev.text or "").strip(), script)
+        if path:
+            try:
+                self.last_table_path = str(web_table.save_csv(table, path))
+            except Exception as exc:                 # noqa: BLE001
+                self.last_table_reason = f"保存 CSV 失败：{exc}"
+                return False
         return True
 
     # ---------------- 清理 ----------------
