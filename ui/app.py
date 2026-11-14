@@ -165,6 +165,111 @@ def _upgrade_fail_hint(exc: Exception) -> str:
     return text + "\n\n可在升级窗口里重新设置升级文件夹。"
 
 
+class _RecordMenu(tk.Toplevel):
+    """录制中右键弹出的指令菜单
+
+    为什么不用 tk.Menu
+    ─────────────────────────────────────
+    录制时网页自己也会弹右键菜单，而且就是在光标处往右下展开。原生
+    tk.Menu 压不住它（常常整个被盖住，用户以为没弹）。所以这里用置顶的
+    Toplevel 自绘，并故意摆在光标**左上方**：网页菜单往右下长，两边不打架。
+
+    关闭方式：点某一项 / Esc / 失去焦点 / 超时。关闭时回调 on_close(是否选中)。
+    """
+
+    def __init__(self, master, x: int, y: int, items: list, on_close):
+        super().__init__(master)
+        self._on_close = on_close
+        self._closed = False
+        self.overrideredirect(True)
+        try:
+            self.attributes("-topmost", True)
+        except tk.TclError:
+            pass
+        self.configure(bg="#2b3347", bd=0)
+
+        body = tk.Frame(self, bg="#2b3347", padx=1, pady=1)
+        body.pack(fill="both", expand=True)
+
+        for it in items:
+            if it is None:
+                tk.Frame(body, bg="#454f68", height=1).pack(fill="x", pady=3)
+                continue
+            text, hint, cb = it
+            row = tk.Frame(body, bg="#2b3347", cursor="hand2")
+            row.pack(fill="x")
+            lbl = tk.Label(row, text="  " + text, bg="#2b3347", fg="#e8edf7",
+                           font=("Microsoft YaHei UI", 9), anchor="w",
+                           padx=10, pady=7)
+            lbl.pack(side="left")
+            kids = [row, lbl]
+            if hint:
+                hl = tk.Label(row, text=hint + "  ", bg="#2b3347", fg="#8b96ad",
+                              font=("Segoe UI", 8), anchor="e")
+                hl.pack(side="right")
+                kids.append(hl)
+
+            def enter(_=None, kids=kids):
+                for w in kids:
+                    w.configure(bg="#3a465f")
+
+            def leave(_=None, kids=kids):
+                for w in kids:
+                    w.configure(bg="#2b3347")
+
+            def click(_=None, cb=cb):
+                self.close(True)
+                if cb:
+                    master.after(1, cb)
+
+            for w in kids:
+                w.bind("<Enter>", enter)
+                w.bind("<Leave>", leave)
+                w.bind("<Button-1>", click)
+
+        self._born = time.time()
+        self.bind("<Escape>", lambda e: self.close(False))
+
+        def _lost_focus(_=None):
+            # 刚弹出来时 focus_force 尚未生效，会先来一次 FocusOut：
+            # 不挡掉的话菜单会自己秒关，等于没弹
+            if time.time() - self._born < 0.25:
+                return
+            self.close(False)
+
+        self.bind("<FocusOut>", _lost_focus)
+        self.after(10000, lambda: self.close(False))     # 超时兜底，别一直挂着
+
+        self.update_idletasks()
+        w, h = self.winfo_width(), self.winfo_height()
+        sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
+        # 优先左上：网页的右键菜单从光标往右下展开，摆左上方就不会被它盖住
+        x0, y0 = x - w - 10, y - h - 10
+        if x0 < 0:
+            x0 = min(x + 12, max(0, sw - w))
+        if y0 < 0:
+            y0 = min(y + 12, max(0, sh - h))
+        self.geometry(f"+{x0}+{y0}")
+        try:
+            self.lift()
+            self.focus_force()
+        except tk.TclError:
+            pass
+
+    def close(self, chosen: bool = False) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        try:
+            self.destroy()
+        except tk.TclError:
+            pass
+        try:
+            self._on_close(bool(chosen))
+        except Exception:                          # noqa: BLE001
+            pass
+
+
 class _WebTableDialog(tk.Toplevel):
     """抓取网页表格：复制 → 解析 → 预览 → 存 CSV / 设为数据源
 
@@ -2358,14 +2463,13 @@ class MacroApp(tk.Tk):
 
     def _close_rec_menu(self) -> None:
         """收起录制中的右键菜单（停止录制 / 暂停时别让它挂着）"""
-        m, self._rec_menu = self._rec_menu, None
+        m = self._rec_menu
         if m is None:
             return
         try:
-            m.unpost()
-            m.destroy()
+            m.close(False)        # 会走 _on_rec_menu_closed：恢复录制
         except Exception:                          # noqa: BLE001
-            pass
+            self._rec_menu = None
 
     # ------------------------------------------------------- 录制中右键插指令
     def _on_record_right_click(self, x: int, y: int) -> None:
@@ -2383,33 +2487,73 @@ class MacroApp(tk.Tk):
         """录制中的右键菜单：插入需要现场取景的指令
 
         暂停时也允许弹：暂停只是不记录输入，插指令照样有用。
+        菜单弹出的同时就暂停录制 —— 点菜单那一下也不能被录进脚本。
+        """
+        if not self.recorder.running or self._rec_menu is not None:
+            return
+        self._rec_begin()
+        x, y = self._right_pos
+        items = [
+            ("找图点击…", "框选要点的目标",
+             lambda: self._rec_insert("find_image")),
+            ("验证码识别…", "框选验证码",
+             lambda: self._rec_insert("ocr")),
+            ("抓取网页表格…", "抓取后存 CSV",
+             lambda: self._rec_insert("grab_table")),
+            None,
+            ("插入等待 1 秒", "",
+             lambda: self._rec_insert_wait(1000)),
+            ("记录这次右键", "",
+             self._rec_record_right_click),
+        ]
+        try:
+            self._rec_menu = _RecordMenu(self, x, y, items,
+                                         self._on_rec_menu_closed)
+        except Exception as exc:                   # noqa: BLE001
+            self._rec_cancel()
+            self._set_status(f"右键菜单没能弹出（{exc}）")
+
+    def _on_rec_menu_closed(self, chosen: bool) -> None:
+        """菜单收起：没选任何项就把录制恢复原样（停留时间也不计入脚本）"""
+        self._rec_menu = None
+        self._focus_back_to_target()
+        if not chosen:
+            self._rec_cancel()
+
+    def _focus_back_to_target(self) -> None:
+        """菜单会抢走焦点：收起后把焦点还给录制的目标窗口"""
+        if not self.recorder.running or not self.target_window:
+            return
+        try:
+            focus_window(self.target_window)
+        except Exception:                          # noqa: BLE001
+            pass
+
+    def _rec_begin(self) -> dict | None:
+        """进入「插入指令」状态：暂停录制，记下时刻与窗口状态
+
+        弹菜单和框选都算在内 —— 这段时间里用户的点击、输入一律不录进脚本，
+        结束后再把时钟回拨，避免变成回放时的一段干等。
         """
         if not self.recorder.running:
-            return
-        x, y = self._right_pos
-        m = tk.Menu(self, tearoff=0)
-        m.add_command(label="找图点击…   框选要点的目标",
-                      command=lambda: self._rec_insert("find_image"))
-        m.add_command(label="验证码识别…   框选验证码",
-                      command=lambda: self._rec_insert("ocr"))
-        m.add_command(label="抓取网页表格…   复制/抓取后存 CSV",
-                      command=lambda: self._rec_insert("grab_table"))
-        m.add_separator()
-        m.add_command(label="插入等待 1 秒",
-                      command=lambda: self._rec_insert_wait(1000))
-        m.add_command(label="记录这次右键",
-                      command=self._rec_record_right_click)
-        self._rec_menu = m
-        try:
-            m.tk_popup(x, y)
-        except tk.TclError as exc:
-            # 极少数环境（远程桌面 / 无输入桌面）弹不出原生菜单：
-            # 至少让用户知道这次右键被吃掉了，而不是「什么都没发生」
-            self._set_status(f"右键菜单没能弹出（{exc}）")
-        finally:
+            return None
+        if self._rec_ctx is not None:
+            return self._rec_ctx
+        ctx = {"t": self.recorder.duration_ms,
+               "paused": not self.recorder.paused,
+               "win": self.state()}     # 录制时主窗口是隐藏的，完事要还原
+        if ctx["paused"]:
+            self.recorder.pause()
+            self._sync_hud_paused()
+        self._rec_ctx = ctx
+        return ctx
+
+    def _sync_hud_paused(self) -> None:
+        """迷你条上的 REC/PAUSE 跟着实际状态走（插入指令时会临时暂停）"""
+        if self.hud is not None:
             try:
-                m.grab_release()
-            except tk.TclError:
+                self.hud.set_paused(bool(self.recorder.paused))
+            except Exception:                      # noqa: BLE001
                 pass
 
     def _rec_insert(self, kind: str) -> None:
@@ -2421,12 +2565,7 @@ class MacroApp(tk.Tk):
         """
         if not self.recorder.running:
             return
-        ctx = {"t": self.recorder.duration_ms,
-               "paused": not self.recorder.paused,
-               "win": self.state()}     # 录制时主窗口是隐藏的，完事要还原
-        if ctx["paused"]:
-            self.recorder.pause()       # 框选/对话框期间的点击不算录制内容
-        self._rec_ctx = ctx
+        self._rec_begin()
         self._set_status("正在插入指令：录制已暂停，完成后自动继续…")
         try:
             if kind == "find_image":
@@ -2456,6 +2595,7 @@ class MacroApp(tk.Tk):
         self.recorder.shift_clock(self.recorder.duration_ms - ctx["t"])
         if ctx["paused"]:
             self.recorder.resume()
+            self._sync_hud_paused()
         self._rec_restore_window(ctx)
         self._set_status("已取消插入，录制继续")
 
@@ -2479,6 +2619,7 @@ class MacroApp(tk.Tk):
             self.recorder.shift_clock(self.recorder.duration_ms - t)
             if ctx and ctx["paused"]:
                 self.recorder.resume()
+                self._sync_hud_paused()
             # 必须进 recorder：停止录制时脚本用 base + recorder.events 重建，
             # 只塞进界面列表的话一按 F9 这条指令就没了
             self.recorder.inject(ev, t=t)
@@ -2490,18 +2631,25 @@ class MacroApp(tk.Tk):
         if not self.recorder.running:
             self._insert_wait_event(ms)
             return
-        self.recorder.inject(Event(t=0, type="delay", dx=ms, valid=True))
-        self._set_status(f"已插入等待 {ms} 毫秒（录制继续）")
+        ev = Event(t=0, type="delay", dx=ms, valid=True)
+        if self._rec_ctx is not None:      # 从右键菜单进来的：顺便收尾恢复录制
+            self._rec_finish(ev)
+        else:
+            self.recorder.inject(ev)
+            self._set_status(f"已插入等待 {ms} 毫秒（录制继续）")
 
     def _rec_record_right_click(self) -> None:
         """菜单里选「记录这次右键」：把刚才那次右键补回脚本"""
         if not self.recorder.running:
             return
         x, y = self._right_pos
-        self.recorder.inject(
-            Event(t=0, type="edit", key="right_click",
-                  x=x, y=y, button="right"))
-        self._set_status(f"已把这次右键记进脚本：({x}, {y})")
+        ev = Event(t=0, type="edit", key="right_click",
+                   x=x, y=y, button="right")
+        if self._rec_ctx is not None:
+            self._rec_finish(ev)
+        else:
+            self.recorder.inject(ev)
+            self._set_status(f"已把这次右键记进脚本：({x}, {y})")
 
     def _ripple_at(self, x: int, y: int, button: str = "left") -> None:
         """在屏幕坐标画涟漪（录制中由 on_press 回调触发）"""

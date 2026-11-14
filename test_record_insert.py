@@ -146,6 +146,43 @@ try:
     ck("录制中插等待也进 recorder",
        any(e.type == "delay" and e.dx == 1000 for e in r.events),
        [(e.type, e.dx) for e in r.events])
+
+    # ------------------------------------------------------------ 右键菜单
+    print("\n[5] 右键菜单：弹出即暂停，菜单上的点击不进脚本")
+    r.paused = False
+    win._rec_ctx = None
+    win._rec_menu = None
+    win._right_pos = (900, 700)
+    win._show_record_menu()
+    win.update()
+    ck("菜单已弹出", win._rec_menu is not None)
+    ck("弹菜单时录制已暂停（点菜单不会被录进去）", r.paused is True)
+    mx = win._rec_menu.winfo_rootx()
+    my = win._rec_menu.winfo_rooty()
+    ck("菜单避开光标右下（网页右键菜单的位置）",
+       mx < 900 or my < 700, (mx, my))
+
+    win._rec_menu.close(False)          # 模拟没选任何项就关掉
+    win.update()
+    ck("没选中 → 录制恢复", r.paused is False)
+    ck("没选中 → 上下文清空", win._rec_ctx is None)
+
+    r.paused = False
+    win._rec_ctx = None
+    win._show_record_menu()
+    win.update()
+    t_menu = (win._rec_ctx or {}).get("t")
+    win._rec_menu.close(True)           # 模拟选中「找图点击」
+    win.update()
+    ck("选中后仍暂停，等框选结果", r.paused is True)
+    ck("菜单已收起", win._rec_menu is None)
+    n_before2 = len(r.events)
+    win._rec_insert("find_image")       # fake_cmd 会 _append 一条找图指令
+    ck("框选完成后恢复录制", r.paused is False)
+    ck("指令落进录制流", len(r.events) == n_before2 + 1,
+       [e.type for e in r.events])
+    ck("指令时间落在右键那一刻",
+       r.events[-1].t <= (t_menu or 0) + 80, (r.events[-1].t, t_menu))
 finally:
     win.recorder.running = False
     win.destroy()
