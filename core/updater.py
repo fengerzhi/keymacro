@@ -40,14 +40,14 @@ import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 
-APP_VERSION = "1.8.7"
+APP_VERSION = "1.8.8"
 
 # 当前版本的更新说明：生成升级包时写入 notes.txt，升级窗口会自动显示
-RELEASE_NOTES = """v1.8.7
-- 新增「抓取网页表格」指令：在网页里选中表格 Ctrl+C（或点「自动复制」倒计时），程序把表格解析成行列并存成 CSV，配合数据源 {{列名}} 可按行批量操作
-- 数据源面板新增 🌐 按钮：抓完直接存 CSV 并设为数据源，不用先手工存文件再回来选
-- 解析能容忍整页复制：会自动跳过导航、筛选栏、分页条，从一堆文字里挑出真正的表格
-- 首列复选框（复制出来是空的）也能保留为「列1」；空列名、重名列、列数不齐的行都会自动补齐"""
+RELEASE_NOTES = """v1.8.8
+- 录制中按右键弹出「插入指令」菜单：找图点击、验证码识别、抓取网页表格，还能「记录这次右键」和「插入等待 1 秒」
+- 插入的指令会进录制流，按 F9 停止时不会被冲掉；框选期间的耗时不会变成回放时的干等，主窗口也不会在录制中弹出
+- 修复填过过期 GitHub Token 后「检查更新」一直报 401 的问题：带 token 被拒时自动改匿名重试
+- 修复迷你条「插入等待 1 秒」一点就报错（等待事件的正确类型是 delay / dx）"""
 
 
 
@@ -363,6 +363,23 @@ def _http_get(url: str, timeout: int, headers: dict | None = None) -> bytes:
         return resp.read()
 
 
+def _github_api_get(url: str, auth: bool | None = None) -> bytes:
+    """读 GitHub 接口：带 token 被拒（401/403）就自动改匿名重试一次
+
+    为什么必须兜底：github_token.txt 里留着一个过期/被撤销的 token 时，
+    GitHub 对无效凭据直接回 401 —— 连公开仓库的只读接口都进不去。
+    用户看到的就是「检查升级失败：HTTP Error 401」，可仓库明明是公开的。
+    """
+    hdr = github_headers(auth=True if auth is None else auth)
+    try:
+        return _http_get(url, UPDATE_TIMEOUT, hdr)
+    except urllib.error.HTTPError as exc:
+        if exc.code not in (401, 403) or not hdr.get("Authorization"):
+            raise
+        upgrade_log(f"GitHub 拒绝了当前 Token（HTTP {exc.code}），改用匿名访问")
+        return _http_get(url, UPDATE_TIMEOUT, github_headers(auth=False))
+
+
 def _github_repo_from_url(url: str) -> str | None:
     """从 GitHub 链接里解析 'owner/repo'；不是 GitHub 仓库链接则返回 None。
 
@@ -395,10 +412,15 @@ def fetch_manifest_github(repo: str) -> dict:
     """
     api = f"https://api.github.com/repos/{repo}/releases/latest"
     try:
-        raw = _http_get(api, UPDATE_TIMEOUT, github_headers(auth=True))
+        raw = _github_api_get(api)
     except urllib.error.HTTPError as e:
         if e.code == 404:
             raise LookupError("该仓库还没有发布 Release（或仓库不存在/私有未授权）")
+        if e.code in (401, 403):
+            raise PermissionError(
+                "GitHub 拒绝了访问（HTTP %d）。\n"
+                "多半是之前填的 Token 已过期，把 "
+                "~/.macro-sprite/github_token.txt 删掉后重试。" % e.code)
         raise
     data = json.loads(raw.decode("utf-8"))
     tag = (data.get("tag_name") or data.get("name") or "").strip()

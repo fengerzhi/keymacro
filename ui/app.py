@@ -146,6 +146,25 @@ class _RecordModeDialog(tk.Toplevel):
         self.destroy()
 
 
+def _upgrade_fail_hint(exc: Exception) -> str:
+    """把升级失败翻译成「照着做就能好」的提示，别只甩一句 HTTP 401"""
+    text = f"检查升级失败：\n{exc}"
+    low = str(exc).lower()
+    code = getattr(exc, "code", None)
+    if "github_token" in str(exc):        # updater 里已经写明了怎么处理
+        return text
+    if code in (401, 403) or "401" in low or "403" in low:
+        return (text + "\n\nGitHub 拒绝了这次请求：多半是之前填的 Token 过期了。\n"
+                "把 ~/.macro-sprite/github_token.txt 删掉，再点一次「检查更新」。")
+    if "timed out" in low or "timeout" in low:
+        return (text + "\n\n网络超时：换网络/代理再试，"
+                       "或把「升级文件夹」指到本地的升级目录。")
+    if "urlopen error" in low or "getaddrinfo" in low or "不能连接" in str(exc):
+        return (text + "\n\n连不上 GitHub：检查网络或代理，"
+                       "也可以把「升级文件夹」指到本地的升级目录。")
+    return text + "\n\n可在升级窗口里重新设置升级文件夹。"
+
+
 class _WebTableDialog(tk.Toplevel):
     """抓取网页表格：复制 → 解析 → 预览 → 存 CSV / 设为数据源
 
@@ -384,6 +403,9 @@ class MacroApp(tk.Tk):
             # 按下瞬间触发涟漪：不能等 mousedown 落盘（那要等松手）
             on_press=lambda x, y, b: self.after(
                 0, self._ripple_at, x, y, b) if x is not None else None,
+            # 录制中右键 → 弹「插入指令」菜单（找图/验证码/抓网页表格）
+            on_right_click=lambda x, y: self.after(
+                0, self._on_record_right_click, x, y),
         )
         self.player = Player()
         # 回放时也画涟漪：player 在回放线程里回调，切回主线程再画
@@ -392,6 +414,10 @@ class MacroApp(tk.Tk):
         self.script_path: str | None = None
         self.target_window: str | None = None
         self._last_row_count = 0
+        # 录制中右键插入指令的上下文（None = 没在插入流程里）
+        self._rec_ctx: dict | None = None
+        self._right_pos: tuple[int, int] = (0, 0)
+        self._rec_menu: tk.Menu | None = None    # 当前弹出的右键菜单
 
         # ---- 崩溃兜底：tkinter 回调里的异常默认只打到 stderr，
         #      pythonw 启动时等于彻底静默（用户只看到窗口消失）
@@ -1223,8 +1249,7 @@ class MacroApp(tk.Tk):
             try:
                 m = updater.active_manifest()
             except Exception as exc:
-                self.after(0, lambda e=exc: finish(
-                    f"检查升级失败：\n{e}\n\n可在升级窗口里重新设置升级文件夹。"))
+                self.after(0, lambda e=exc: finish(_upgrade_fail_hint(e)))
                 return
             self.after(0, lambda: decide(m))
 
@@ -2297,7 +2322,8 @@ class MacroApp(tk.Tk):
         self.btn_rec.configure(state="disabled", text="● 录制中…")
         self.btn_stop.configure(state="normal")
         self.btn_play.configure(state="disabled")
-        self._set_status("录制中… 请操作目标窗口（F9 停止 · F8 暂停）")
+        self._set_status("录制中… 请操作目标窗口（F9 停止 · F8 暂停 · "
+                         "右键插入找图/验证码/抓网页表格）")
 
         if self.hud is not None:
             self.hud.set_moves_before(self.recorder.moves_before_click)
@@ -2329,6 +2355,153 @@ class MacroApp(tk.Tk):
         self.script.events.append(item)
         self._insert_event_row(i, item)
         self.tree.yview_moveto(1.0)
+
+    def _close_rec_menu(self) -> None:
+        """收起录制中的右键菜单（停止录制 / 暂停时别让它挂着）"""
+        m, self._rec_menu = self._rec_menu, None
+        if m is None:
+            return
+        try:
+            m.unpost()
+            m.destroy()
+        except Exception:                          # noqa: BLE001
+            pass
+
+    # ------------------------------------------------------- 录制中右键插指令
+    def _on_record_right_click(self, x: int, y: int) -> None:
+        """录制中松开右键：就地在光标处弹出「插入指令」菜单
+
+        必须在松手时弹：按下就弹的话，菜单刚出现就吃到这次「松开」，
+        经常一闪而过（录制时主窗口是隐藏的，看起像根本没弹）。
+        """
+        if not self.recorder.running:
+            return
+        self._right_pos = (int(x), int(y))
+        self._show_record_menu()
+
+    def _show_record_menu(self) -> None:
+        """录制中的右键菜单：插入需要现场取景的指令
+
+        暂停时也允许弹：暂停只是不记录输入，插指令照样有用。
+        """
+        if not self.recorder.running:
+            return
+        x, y = self._right_pos
+        m = tk.Menu(self, tearoff=0)
+        m.add_command(label="找图点击…   框选要点的目标",
+                      command=lambda: self._rec_insert("find_image"))
+        m.add_command(label="验证码识别…   框选验证码",
+                      command=lambda: self._rec_insert("ocr"))
+        m.add_command(label="抓取网页表格…   复制/抓取后存 CSV",
+                      command=lambda: self._rec_insert("grab_table"))
+        m.add_separator()
+        m.add_command(label="插入等待 1 秒",
+                      command=lambda: self._rec_insert_wait(1000))
+        m.add_command(label="记录这次右键",
+                      command=self._rec_record_right_click)
+        self._rec_menu = m
+        try:
+            m.tk_popup(x, y)
+        except tk.TclError as exc:
+            # 极少数环境（远程桌面 / 无输入桌面）弹不出原生菜单：
+            # 至少让用户知道这次右键被吃掉了，而不是「什么都没发生」
+            self._set_status(f"右键菜单没能弹出（{exc}）")
+        finally:
+            try:
+                m.grab_release()
+            except tk.TclError:
+                pass
+
+    def _rec_insert(self, kind: str) -> None:
+        """录制中插入一条「要现场取景」的指令
+
+        流程：暂停录制 → 走原来那套框选 / 对话框 → 拿到事件后塞进 recorder，
+        并把这段操作的耗时从时钟里扣掉。不扣的话，挑图那 20 秒会原样变成
+        回放时的一段干等。
+        """
+        if not self.recorder.running:
+            return
+        ctx = {"t": self.recorder.duration_ms,
+               "paused": not self.recorder.paused,
+               "win": self.state()}     # 录制时主窗口是隐藏的，完事要还原
+        if ctx["paused"]:
+            self.recorder.pause()       # 框选/对话框期间的点击不算录制内容
+        self._rec_ctx = ctx
+        self._set_status("正在插入指令：录制已暂停，完成后自动继续…")
+        try:
+            if kind == "find_image":
+                self._cmd_find_image()
+            elif kind == "ocr":
+                self._cmd_ocr()
+            elif kind == "grab_table":
+                # 对话框要有个正常的父窗口，否则在隐藏的主窗口上弹得很别扭
+                try:
+                    self.deiconify()
+                    self.lift()
+                except Exception:                  # noqa: BLE001
+                    pass
+                self._cmd_grab_table()
+            else:
+                raise ValueError(kind)
+        except Exception as exc:                    # noqa: BLE001
+            self._rec_cancel()
+            messagebox.showerror("插入失败", str(exc), parent=self)
+
+    def _rec_cancel(self) -> None:
+        """插入流程被取消：把录制恢复原样（时钟一并校准）"""
+        ctx = self._rec_ctx
+        self._rec_ctx = None
+        if ctx is None or not self.recorder.running:
+            return
+        self.recorder.shift_clock(self.recorder.duration_ms - ctx["t"])
+        if ctx["paused"]:
+            self.recorder.resume()
+        self._rec_restore_window(ctx)
+        self._set_status("已取消插入，录制继续")
+
+    def _rec_restore_window(self, ctx: dict | None) -> None:
+        """插入流程会把主窗口 deiconify 出来，结束时恢复成录制时的样子"""
+        st = (ctx or {}).get("win")
+        try:
+            if st == "withdrawn":
+                self.withdraw()
+            elif st == "iconic":
+                self.iconify()
+        except Exception:                          # noqa: BLE001
+            pass
+
+    def _rec_finish(self, ev: Event) -> None:
+        """拿到指令事件：塞进录制流，让后面的时间接着走"""
+        ctx = self._rec_ctx
+        self._rec_ctx = None
+        t = ctx["t"] if ctx else self.recorder.duration_ms
+        if self.recorder.running:
+            self.recorder.shift_clock(self.recorder.duration_ms - t)
+            if ctx and ctx["paused"]:
+                self.recorder.resume()
+            # 必须进 recorder：停止录制时脚本用 base + recorder.events 重建，
+            # 只塞进界面列表的话一按 F9 这条指令就没了
+            self.recorder.inject(ev, t=t)
+            self._rec_restore_window(ctx)
+            self._set_status(f"已插入：{ev.detail()}（录制继续）")
+
+    def _rec_insert_wait(self, ms: int) -> None:
+        """录制中插入等待：直接进录制流，不打断录制"""
+        if not self.recorder.running:
+            self._insert_wait_event(ms)
+            return
+        self.recorder.inject(Event(t=0, type="delay", dx=ms, valid=True))
+        self._set_status(f"已插入等待 {ms} 毫秒（录制继续）")
+
+    def _rec_record_right_click(self) -> None:
+        """菜单里选「记录这次右键」：把刚才那次右键补回脚本"""
+        if not self.recorder.running:
+            return
+        x, y = self._right_pos
+        self.recorder.inject(
+            Event(t=0, type="edit", key="right_click",
+                  x=x, y=y, button="right"))
+        self._set_status(f"已把这次右键记进脚本：({x}, {y})")
 
     def _ripple_at(self, x: int, y: int, button: str = "left") -> None:
         """在屏幕坐标画涟漪（录制中由 on_press 回调触发）"""
@@ -2393,6 +2566,7 @@ class MacroApp(tk.Tk):
         """迷你条「暂停 / 继续」"""
         if not self.recorder.running:
             return
+        self._close_rec_menu()
         paused = self.recorder.toggle_pause()
         if self.hud is not None:
             self.hud.set_paused(paused)
@@ -2403,6 +2577,7 @@ class MacroApp(tk.Tk):
         """F8：暂停 / 继续录制"""
         if not self.recorder.running:
             return
+        self._close_rec_menu()
         paused = self.recorder.toggle_pause()
         if self.hud is not None:
             self.hud.set_paused(paused)
@@ -2462,9 +2637,11 @@ class MacroApp(tk.Tk):
         self.after(150, lambda: self._insert_wait_event(1000))
 
     def _insert_wait_event(self, ms: int) -> None:
+        # 等待事件真实的类型是 delay，毫秒存在 dx 里（以前写成 wait/ms，
+        # 一按就 TypeError: Event.__init__() got an unexpected keyword 'ms'）
         from core.script_model import Event as _E
         last_t = self.script.events[-1].t if self.script.events else 0
-        ev = _E(t=last_t, type="wait", ms=ms, valid=True)
+        ev = _E(t=last_t, type="delay", dx=ms, valid=True)
         self.script.events.append(ev)
         self._refresh_list()
         self._set_status(f"已插入等待 {ms} 毫秒")
@@ -2484,6 +2661,8 @@ class MacroApp(tk.Tk):
 
 
     def stop_recording(self) -> None:
+        self._rec_ctx = None            # 结束录制：清掉「插入指令」的上下文
+        self._close_rec_menu()
         if not self.recorder.running:
             self._hide_hud()
             self.deiconify()
@@ -3221,6 +3400,11 @@ class MacroApp(tk.Tk):
         若 self._insert_index 不为 None（右键「在此处插入」），插到该位置；
         否则追加到末尾。用完即清。
         """
+        # 录制中从右键菜单插入的指令：走录制流，别写进会被重建的界面列表
+        if self._rec_ctx is not None and self.recorder.running:
+            self._insert_index = None
+            self._rec_finish(ev)
+            return -1
         idx = self._insert_index
         self._insert_index = None
         self._snapshot()
@@ -3826,6 +4010,7 @@ class MacroApp(tk.Tk):
             pick_points(self, count=count, on_done=on_done)
         except Exception as exc:                       # noqa: BLE001
             self.deiconify()
+            self._rec_cancel()
             messagebox.showerror("取点失败", str(exc))
 
     def _after_pick(self, pts, builder) -> None:
@@ -3833,6 +4018,7 @@ class MacroApp(tk.Tk):
         self.lift()
         if not pts:
             self._insert_index = None        # 取消取点：清掉待插入位置
+            self._rec_cancel()               # 录制中取消：恢复录制
             self._set_status("已取消取点")
             return
         ev = builder(pts)
@@ -3859,6 +4045,7 @@ class MacroApp(tk.Tk):
             grab_region(self, on_done=on_done)
         except Exception as exc:                       # noqa: BLE001
             self.deiconify()
+            self._rec_cancel()
             messagebox.showerror("框选失败", str(exc), parent=self)
 
     def _after_grab(self, rect, path, err, builder) -> None:
@@ -3866,17 +4053,20 @@ class MacroApp(tk.Tk):
         self.lift()
         if err:
             self._insert_index = None
+            self._rec_cancel()
             messagebox.showerror("框选截图失败",
                                  f"{err}\n\n（目标图没保存，指令没有添加）",
                                  parent=self)
             return
         if not rect:
             self._insert_index = None        # 取消框选
+            self._rec_cancel()
             self._set_status("已取消框选")
             return
         ev = builder(rect, path)
         if ev is None:
             self._insert_index = None
+            self._rec_cancel()
             return
         self._append(ev)
         # 模板太淡的话回放几乎必然点错。以前用弹窗拦，这里不打扰，
@@ -4094,6 +4284,7 @@ class MacroApp(tk.Tk):
                     "端口不一样的话，插入后右键「编辑事件」可以改服务地址。\n\n"
                     "仍然插入这条指令吗？（回放时会再次尝试连接）", parent=self):
                 self._insert_index = None
+                self._rec_cancel()
                 return
 
         if not messagebox.askokcancel(
@@ -4104,6 +4295,7 @@ class MacroApp(tk.Tk):
                 "  第 3 点（可跳过）：点一下要填写的输入框\n\n"
                 "只想输入到当前光标位置？取完 2 点按 Enter 结束。", parent=self):
             self._insert_index = None
+            self._rec_cancel()
             return
 
         def build(pts):
@@ -4125,10 +4317,12 @@ class MacroApp(tk.Tk):
         r = dlg.result
         if not r:
             self._insert_index = None
+            self._rec_cancel()
             return
         if not r["insert"]:
             # 只抓了数据、不想插指令：若勾了数据源由调用方处理，这里不落指令
             self._insert_index = None
+            self._rec_cancel()
             return
         ev = Event(t=0, type="grab_table", text=r["path"],
                    key=r["mode"], dx=600)

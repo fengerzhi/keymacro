@@ -361,6 +361,65 @@ def main() -> int:
         except Exception as exc:                            # noqa: BLE001
             print(f"  （跳过：没有可用的图形环境 {type(exc).__name__}）")
 
+        # ---------------------------------------------------- 12. 失效 Token
+        print("\n[12] 失效的 Token 不能让「检查更新」挂掉")
+        import urllib.error
+
+        real_get = updater._http_get
+        real_token = updater.github_token
+        calls: list = []
+
+        def fake_get(url, timeout, headers=None):
+            calls.append((headers or {}).get("Authorization"))
+            if (headers or {}).get("Authorization"):        # 带 token 就被拒
+                raise urllib.error.HTTPError(url, 401, "Unauthorized", {}, None)
+            return json.dumps({
+                "tag_name": "v9.8.7", "body": "说明",
+                "assets": [{"name": "k.zip",
+                            "browser_download_url": "https://x/k.zip"}]},
+            ).encode()
+
+        try:
+            updater.github_token = lambda: "ghp_expired_token"
+            updater._http_get = fake_get
+            calls.clear()
+            m4 = updater.fetch_manifest_github("o/r")
+            ck("token 被拒（401）后自动匿名重试", len(calls) == 2, str(calls))
+            ck("第二次请求不再带 Authorization",
+               calls[-1] is None, str(calls))
+            ck("匿名重试后能拿到版本",
+               m4["version"] == "9.8.7", str(m4.get("version")))
+
+            def always_401(url, timeout, headers=None):
+                calls.append((headers or {}).get("Authorization"))
+                raise urllib.error.HTTPError(url, 401, "Unauthorized", {}, None)
+
+            updater._http_get = always_401
+            calls.clear()
+            try:
+                updater.fetch_manifest_github("o/r")
+                ck("两次都 401 时应报错", False)
+            except PermissionError as exc:
+                ck("两次都 401 抛 PermissionError", True)
+                ck("提示里告诉用户去删 github_token.txt",
+                   "github_token" in str(exc), str(exc)[:60])
+
+            # 没配 token：不应该为了兜底多请求一次
+            updater.github_token = lambda: ""
+            updater._http_get = fake_get
+            calls.clear()
+            updater.fetch_manifest_github("o/r")
+            ck("没 token 时只请求一次", len(calls) == 1, str(calls))
+        finally:
+            updater._http_get = real_get
+            updater.github_token = real_token
+
+        ck("界面层把 401 翻译成人能照着做的提示",
+           "github_token" in
+           __import__("ui.app", fromlist=["x"])._upgrade_fail_hint(
+               PermissionError("GitHub 拒绝了访问（HTTP 401）。\n"
+                               "把 ~/.macro-sprite/github_token.txt 删掉后重试。")))
+
     finally:
         updater.set_update_dir(old_dir)
         shutil.rmtree(tmp, ignore_errors=True)

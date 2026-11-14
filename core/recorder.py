@@ -114,7 +114,8 @@ class Recorder:
     def __init__(self, on_stop: Callable[[], None] | None = None,
                  on_event: Callable[[Event], None] | None = None,
                  on_drop: Callable[[Event], None] | None = None,
-                 on_press: Callable[[int, int, str], None] | None = None):
+                 on_press: Callable[[int, int, str], None] | None = None,
+                 on_right_click: Callable[[int, int], None] | None = None):
         self.events: list[Event] = []
         self.running = False
         self.paused = False               # 暂停：监听仍在跑，但不写入事件
@@ -124,6 +125,9 @@ class Recorder:
         # 按下瞬间回调 (x, y, button)：用于涟漪特效，必须在按键那一刻触发，
         # 不能等 mousedown 落盘（那要等到松开鼠标，画面就"没有动感"了）
         self.on_press = on_press
+        # 右键回调 (x, y)：录制时用来弹「插入指令」菜单。
+        # 挂了这个回调后，右键本身不再写进脚本（想记录就用菜单里的对应项）。
+        self.on_right_click = on_right_click
 
         self._t0 = 0.0
         self._lock = threading.Lock()
@@ -263,6 +267,34 @@ class Recorder:
         self.pause()
         return True
 
+    # ------------------------------------------------------------ 录制中插入
+    def shift_clock(self, ms: int) -> None:
+        """把录制时钟往前拨 ms
+
+        录制中插指令、框选模板这些操作会占掉几秒甚至几十秒，不拨时钟的话
+        这段时间会原样变成脚本里的一段等待（回放时真的会干等）。
+        """
+        if not self.running or ms <= 0:
+            return
+        self._t0 += ms / 1000.0
+
+    def inject(self, ev: Event, t: int | None = None) -> Event:
+        """往录制流里塞一条「非录制」生成的事件（右键菜单插入的指令）
+
+        必须放进 self.events：停止录制时脚本是用 base + recorder.events
+        重建的，只塞进界面列表的话，一按 F9 这条指令就没了。
+        """
+        with self._lock:
+            ev.t = max(0, int(t)) if t is not None else self._now_ms()
+            ev.valid = True
+            self.events.append(ev)
+        if self.on_event:
+            try:
+                self.on_event(ev)
+            except Exception:
+                pass
+        return ev
+
     # ------------------------------------------------------------ 统计
     @property
     def duration_ms(self) -> int:
@@ -393,10 +425,26 @@ class Recorder:
                 pass
 
     def _on_click(self, x: int, y: int, button, pressed: bool) -> None:
+        name = button.name if hasattr(button, "name") else str(button)
+
+        # 右键：交给界面弹「插入指令」菜单，这次右键不进脚本
+        #
+        # 两个细节：
+        #   · 松手时才回调 —— 按下就弹的话，菜单刚出来就吃到这次「松开」，
+        #     常一闪而过等于没弹（录制时主窗口是隐藏的，尤其明显）。
+        #   · 放在暂停判断之前 —— 暂停只是想停记录输入，插指令照样有用。
+        if name == "right" and self.on_right_click is not None:
+            if (not pressed and self.running and not self._stopping
+                    and not self._excluded(x, y)):
+                try:
+                    self.on_right_click(x, y)
+                except Exception:
+                    pass
+            return
+
         if self._blocked() or self._excluded(x, y):
             return
 
-        name = button.name if hasattr(button, "name") else str(button)
         now = self._now_ms()
         # 点击发生 → 此前的移动轨迹已确定，清空窗口，
         # 后续拖动不会再把这些坐标删掉

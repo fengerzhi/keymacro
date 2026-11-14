@@ -388,6 +388,11 @@ class MiniBar(tk.Toplevel):
             c.create_text(x, BAR_H / 2 + 7, text=f"点击 {self.clicks_n}",
                           anchor="w", fill=C_SUB,
                           font=("Segoe UI", 8), tags="txt")
+            # 录制中右键能插入指令：条上给一句提示，别让人去翻说明
+            if not self.paused:
+                c.create_text(x + 66, BAR_H / 2, text="右键=插指令",
+                              anchor="w", fill=_mix(C_DIM, base, 0.85),
+                              font=("Segoe UI", 8), tags="txt")
         elif self.state == "playback":
             c.create_text(x, BAR_H / 2 - 0.5, text="PLAY", anchor="w",
                           fill=color, font=("Segoe UI", 9, "bold"), tags="txt")
